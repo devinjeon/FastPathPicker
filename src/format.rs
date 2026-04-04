@@ -49,10 +49,45 @@ impl FormattedText {
                     i += 1; // skip 'm'
                 }
 
-                // Apply codes
-                for code in code_str.split(';') {
-                    let code: u8 = code.parse().unwrap_or(0);
-                    current_style = apply_ansi_code(current_style, code);
+                // Apply codes, handling 256-color (38;5;N) and truecolor (38;2;R;G;B)
+                let codes: Vec<&str> = code_str.split(';').collect();
+                let mut ci = 0;
+                while ci < codes.len() {
+                    let code: u16 = codes[ci].parse().unwrap_or(0);
+                    match code {
+                        38 if ci + 2 < codes.len() && codes[ci + 1] == "5" => {
+                            // 256-color foreground: 38;5;N
+                            let n: u8 = codes[ci + 2].parse().unwrap_or(0);
+                            current_style.foreground_color = Some(Color::AnsiValue(n));
+                            ci += 3;
+                        }
+                        38 if ci + 4 < codes.len() && codes[ci + 1] == "2" => {
+                            // Truecolor foreground: 38;2;R;G;B
+                            let r: u8 = codes[ci + 2].parse().unwrap_or(0);
+                            let g: u8 = codes[ci + 3].parse().unwrap_or(0);
+                            let b: u8 = codes[ci + 4].parse().unwrap_or(0);
+                            current_style.foreground_color = Some(Color::Rgb { r, g, b });
+                            ci += 5;
+                        }
+                        48 if ci + 2 < codes.len() && codes[ci + 1] == "5" => {
+                            // 256-color background: 48;5;N
+                            let n: u8 = codes[ci + 2].parse().unwrap_or(0);
+                            current_style.background_color = Some(Color::AnsiValue(n));
+                            ci += 3;
+                        }
+                        48 if ci + 4 < codes.len() && codes[ci + 1] == "2" => {
+                            // Truecolor background: 48;2;R;G;B
+                            let r: u8 = codes[ci + 2].parse().unwrap_or(0);
+                            let g: u8 = codes[ci + 3].parse().unwrap_or(0);
+                            let b: u8 = codes[ci + 4].parse().unwrap_or(0);
+                            current_style.background_color = Some(Color::Rgb { r, g, b });
+                            ci += 5;
+                        }
+                        _ => {
+                            current_style = apply_ansi_code(current_style, code as u8);
+                            ci += 1;
+                        }
+                    }
                 }
             } else {
                 current_text.push(chars[i]);
@@ -238,5 +273,32 @@ mod tests {
         let ft = FormattedText::new("");
         assert!(ft.is_empty());
         assert_eq!(ft.len(), 0);
+    }
+
+    #[test]
+    fn test_256_color_stripping() {
+        // 256-color foreground: ESC[38;5;196m (red)
+        let ft = FormattedText::new("\x1b[38;5;196mcolored\x1b[0m plain");
+        assert_eq!(ft.plain_text(), "colored plain");
+    }
+
+    #[test]
+    fn test_truecolor_stripping() {
+        // Truecolor foreground: ESC[38;2;255;128;0m (orange)
+        let ft = FormattedText::new("\x1b[38;2;255;128;0mrgb text\x1b[0m");
+        assert_eq!(ft.plain_text(), "rgb text");
+    }
+
+    #[test]
+    fn test_256_color_background() {
+        let ft = FormattedText::new("\x1b[48;5;21mblue bg\x1b[0m");
+        assert_eq!(ft.plain_text(), "blue bg");
+    }
+
+    #[test]
+    fn test_mixed_ansi_codes() {
+        // Bold + 256-color + text
+        let ft = FormattedText::new("\x1b[1;38;5;82mgreen bold\x1b[0m normal");
+        assert_eq!(ft.plain_text(), "green bold normal");
     }
 }

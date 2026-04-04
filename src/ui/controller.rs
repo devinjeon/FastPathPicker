@@ -438,7 +438,8 @@ impl Controller {
         let scrollbar = ScrollBar::new(self.match_indices.len(), chrome.content_height as usize);
         let has_scrollbar = scrollbar.is_active();
         let in_xmode = self.mode == Mode::QuickSelect;
-        let _start_x = chrome.content_start_x(has_scrollbar, in_xmode);
+        // content_start_x is used implicitly via text_width calculation
+        let _ = chrome.content_start_x(has_scrollbar, in_xmode);
         let text_width = chrome.text_width(has_scrollbar, in_xmode) as usize;
 
         execute!(stdout, terminal::Clear(ClearType::All))?;

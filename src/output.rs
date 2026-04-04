@@ -196,7 +196,13 @@ fi
 }
 
 fn append_friendly_command(command: &str) -> Result<()> {
-    let escaped = command.replace('"', "\\\"");
+    // Escape for safe use inside double quotes (handles ", $, `, \, !)
+    let escaped = command
+        .replace('\\', "\\\\")
+        .replace('"', "\\\"")
+        .replace('$', "\\$")
+        .replace('`', "\\`")
+        .replace('!', "\\!");
     state::append_script(&format!("echo \"executing command:\"\necho \"{escaped}\""))?;
     state::append_script(command)
 }

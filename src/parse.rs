@@ -397,21 +397,24 @@ fn expand_home(path: &str) -> String {
     }
 }
 
-fn get_repos() -> Vec<String> {
-    let mut repos = vec![
-        "www".to_string(),
-        "fbcode".to_string(),
-        "configerator".to_string(),
-    ];
-    if let Ok(extra) = env::var("FPP_REPOS") {
-        for r in extra.split(',') {
-            let trimmed = r.trim().to_string();
-            if !trimmed.is_empty() {
-                repos.push(trimmed);
+fn get_repos() -> &'static Vec<String> {
+    static REPOS: LazyLock<Vec<String>> = LazyLock::new(|| {
+        let mut repos = vec![
+            "www".to_string(),
+            "fbcode".to_string(),
+            "configerator".to_string(),
+        ];
+        if let Ok(extra) = env::var("FPP_REPOS") {
+            for r in extra.split(',') {
+                let trimmed = r.trim().to_string();
+                if !trimmed.is_empty() {
+                    repos.push(trimmed);
+                }
             }
         }
-    }
-    repos
+        repos
+    });
+    &REPOS
 }
 
 #[cfg(test)]
@@ -839,7 +842,11 @@ mod tests {
             return;
         }
 
-        // Change to tests/ directory so relative paths resolve
+        // Change to tests/ directory so relative ./inputs/ paths resolve.
+        // Uses a mutex to prevent parallel test interference with set_current_dir.
+        use std::sync::Mutex;
+        static DIR_LOCK: Mutex<()> = Mutex::new(());
+        let _guard = DIR_LOCK.lock().unwrap();
         let original_dir = std::env::current_dir().unwrap();
         std::env::set_current_dir(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests"))
             .unwrap();
