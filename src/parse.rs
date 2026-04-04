@@ -820,4 +820,213 @@ mod tests {
             );
         }
     }
+
+    // ── validate_file_exists tests ───────────────────────────────────
+
+    struct FileExistsTestCase {
+        input: &'static str,
+        should_match: bool,
+        expected_file: Option<&'static str>,
+        expected_num: u64,
+    }
+
+    #[test]
+    fn test_validate_file_exists() {
+        // These tests require the fixture files in tests/inputs/
+        let test_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/inputs");
+        if !test_dir.exists() {
+            eprintln!("Skipping validate_file_exists tests: tests/inputs/ not found");
+            return;
+        }
+
+        // Change to tests/ directory so relative paths resolve
+        let original_dir = std::env::current_dir().unwrap();
+        std::env::set_current_dir(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests"))
+            .unwrap();
+
+        let cases = vec![
+            FileExistsTestCase {
+                input: "M    ./inputs/evilFile With Space.txt",
+                should_match: true,
+                expected_file: Some("./inputs/evilFile With Space.txt"),
+                expected_num: 0,
+            },
+            FileExistsTestCase {
+                input: "./inputs/evilFile With Space.txt:22",
+                should_match: true,
+                expected_file: Some("./inputs/evilFile With Space.txt"),
+                expected_num: 22,
+            },
+            FileExistsTestCase {
+                input: "./inputs/annoying Spaces Folder/evilFile With Space2.txt",
+                should_match: true,
+                expected_file: Some("./inputs/annoying Spaces Folder/evilFile With Space2.txt"),
+                expected_num: 0,
+            },
+            FileExistsTestCase {
+                input: "./inputs/annoying Spaces Folder/evilFile With Space2.txt:42",
+                should_match: true,
+                expected_file: Some("./inputs/annoying Spaces Folder/evilFile With Space2.txt"),
+                expected_num: 42,
+            },
+            FileExistsTestCase {
+                input: " ./inputs/annoying Spaces Folder/evilFile With Space2.txt:42",
+                should_match: true,
+                expected_file: Some("./inputs/annoying Spaces Folder/evilFile With Space2.txt"),
+                expected_num: 42,
+            },
+            FileExistsTestCase {
+                input: "M     ./inputs/annoying Spaces Folder/evilFile With Space2.txt:42",
+                should_match: true,
+                expected_file: Some("./inputs/annoying Spaces Folder/evilFile With Space2.txt"),
+                expected_num: 42,
+            },
+            FileExistsTestCase {
+                input: "./inputs/NSArray+Utils.h:42",
+                should_match: true,
+                expected_file: Some("./inputs/NSArray+Utils.h"),
+                expected_num: 42,
+            },
+            FileExistsTestCase {
+                input: "./inputs/blogredesign.sublime-workspace:42",
+                should_match: true,
+                expected_file: Some("./inputs/blogredesign.sublime-workspace"),
+                expected_num: 42,
+            },
+            FileExistsTestCase {
+                input: "inputs/blogredesign.sublime-workspace:42",
+                should_match: true,
+                expected_file: Some("inputs/blogredesign.sublime-workspace"),
+                expected_num: 42,
+            },
+            FileExistsTestCase {
+                input: "inputs/blogredesign.sublime-workspace",
+                should_match: true,
+                expected_file: Some("inputs/blogredesign.sublime-workspace"),
+                expected_num: 0,
+            },
+            FileExistsTestCase {
+                input: "./inputs/annoying-hyphen-dir/Package Control.system-bundle",
+                should_match: true,
+                expected_file: Some("./inputs/annoying-hyphen-dir/Package Control.system-bundle"),
+                expected_num: 0,
+            },
+            FileExistsTestCase {
+                input: "./inputs/annoying-hyphen-dir/Package Control.system-bundle:42",
+                should_match: true,
+                expected_file: Some("./inputs/annoying-hyphen-dir/Package Control.system-bundle"),
+                expected_num: 42,
+            },
+            FileExistsTestCase {
+                input: "./inputs/svo (install the zip, not me).xml",
+                should_match: true,
+                expected_file: Some("./inputs/svo (install the zip, not me).xml"),
+                expected_num: 0,
+            },
+            FileExistsTestCase {
+                input: "./inputs/svo (install the zip not me).xml",
+                should_match: true,
+                expected_file: Some("./inputs/svo (install the zip not me).xml"),
+                expected_num: 0,
+            },
+            FileExistsTestCase {
+                input: "./inputs/svo install the zip, not me.xml",
+                should_match: true,
+                expected_file: Some("./inputs/svo install the zip, not me.xml"),
+                expected_num: 0,
+            },
+            FileExistsTestCase {
+                input: "./inputs/svo install the zip not me.xml",
+                should_match: true,
+                expected_file: Some("./inputs/svo install the zip not me.xml"),
+                expected_num: 0,
+            },
+            FileExistsTestCase {
+                input: "./inputs/annoyingTildeExtension.txt~:42",
+                should_match: true,
+                expected_file: Some("./inputs/annoyingTildeExtension.txt~"),
+                expected_num: 42,
+            },
+            FileExistsTestCase {
+                input: "inputs/.DS_KINDA_STORE",
+                should_match: true,
+                expected_file: Some("inputs/.DS_KINDA_STORE"),
+                expected_num: 0,
+            },
+            FileExistsTestCase {
+                input: "./inputs/.DS_KINDA_STORE",
+                should_match: true,
+                expected_file: Some("./inputs/.DS_KINDA_STORE"),
+                expected_num: 0,
+            },
+        ];
+
+        for tc in &cases {
+            let result = match_line(tc.input, true, false);
+            if tc.should_match {
+                let r = result.unwrap_or_else(|| {
+                    panic!(
+                        "Expected match for {:?} with validate_file_exists=true",
+                        tc.input
+                    );
+                });
+                assert_eq!(
+                    r.path,
+                    tc.expected_file.unwrap(),
+                    "Wrong file for {:?}",
+                    tc.input,
+                );
+                assert_eq!(
+                    r.line_num, tc.expected_num,
+                    "Wrong line num for {:?}",
+                    tc.input,
+                );
+            } else {
+                assert!(
+                    result.is_none(),
+                    "Expected no match for {:?} with validate_file_exists=true",
+                    tc.input,
+                );
+            }
+        }
+
+        // Restore original directory
+        std::env::set_current_dir(original_dir).unwrap();
+    }
+
+    // ── prepend_dir additional cases ─────────────────────────────────
+
+    #[test]
+    fn test_prepend_dir_git_diff_prefix() {
+        let result_a = prepend_dir("a/foo/bar.py", false);
+        assert!(
+            result_a.ends_with("foo/bar.py"),
+            "a/ prefix not stripped: {}",
+            result_a
+        );
+        assert!(
+            !result_a.contains("a/foo"),
+            "a/ should be removed: {}",
+            result_a
+        );
+
+        let result_b = prepend_dir("b/foo/bar.py", false);
+        assert!(
+            result_b.ends_with("foo/bar.py"),
+            "b/ prefix not stripped: {}",
+            result_b
+        );
+        assert!(
+            !result_b.contains("b/foo"),
+            "b/ should be removed: {}",
+            result_b
+        );
+    }
+
+    #[test]
+    fn test_prepend_dir_no_slash() {
+        // File without slash should get ./ prepended
+        let result = prepend_dir("somefile.txt", false);
+        assert_eq!(result, "./somefile.txt");
+    }
 }

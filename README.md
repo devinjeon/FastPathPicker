@@ -84,9 +84,20 @@ make qa         # compare with original PathPicker
 make all        # lint + test + build
 ```
 
+## Testing
+
+Unit tests include:
+- 40+ parsing test cases ported from the original Python implementation
+- Fuzz tests with prefix/suffix combinations
+- File existence validation tests with fixture files in `tests/inputs/`
+- All-input mode tests
+- Path resolution tests (prepend_dir)
+
 ## Compatibility
 
 Drop-in replacement for the original Python PathPicker. All CLI arguments, keyboard shortcuts, environment variables, and state file locations are compatible.
+
+Note: Short aliases use double-dash format (`--nfc`, `--ai`, `--ni`, `--ko`) instead of the Python original's single-dash format (`-nfc`, `-ai`, `-ni`, `-ko`).
 
 ## License
 
