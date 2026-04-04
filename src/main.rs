@@ -1,6 +1,3 @@
-#![allow(dead_code)]
-
-mod editor;
 mod format;
 mod input;
 mod keybindings;

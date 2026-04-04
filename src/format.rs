@@ -2,6 +2,7 @@ use crossterm::style::{Attribute, Color, ContentStyle};
 
 /// Represents a segment of text with optional ANSI styling.
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct StyledSegment {
     pub text: String,
     pub style: ContentStyle,
@@ -10,6 +11,7 @@ pub struct StyledSegment {
 /// Wraps a line of text that may contain ANSI escape sequences,
 /// providing both styled and plain-text access.
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct FormattedText {
     segments: Vec<StyledSegment>,
     plain: String,
@@ -76,11 +78,13 @@ impl FormattedText {
     }
 
     /// Get the styled segments for rendering.
+    #[allow(dead_code)]
     pub fn segments(&self) -> &[StyledSegment] {
         &self.segments
     }
 
     /// Get a substring of the formatted text, breaking at a character position.
+    #[allow(dead_code)]
     pub fn break_at(&self, pos: usize) -> FormattedText {
         let mut new_segments = Vec::new();
         let mut remaining = pos;
@@ -107,10 +111,12 @@ impl FormattedText {
     }
 
     /// Length of the plain text in characters (not bytes).
+    #[allow(dead_code)]
     pub fn len(&self) -> usize {
         self.plain.chars().count()
     }
 
+    #[allow(dead_code)]
     pub fn is_empty(&self) -> bool {
         self.plain.is_empty()
     }

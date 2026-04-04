@@ -15,6 +15,7 @@ pub struct MatchResult {
 
 /// Configuration for each regex in the waterfall.
 struct RegexConfig {
+    #[allow(dead_code)]
     name: &'static str,
     regex: &'static LazyLock<Regex>,
     preferred_regex: Option<&'static LazyLock<Regex>>,

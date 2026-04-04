@@ -56,18 +56,18 @@ fn join_files_into_command(files_and_nums: &[(&str, u64)]) -> String {
 
     if editor == "vim -p" {
         if let Some((first_path, first_num)) = files_and_nums.first() {
-            cmd.push_str(&format!(" +{first_num} {first_path}"));
+            cmd.push_str(&format!(" +{first_num} {}", shell_escape(first_path)));
             for (path, num) in &files_and_nums[1..] {
-                cmd.push_str(&format!(" +\"tabnew +{num} {path}\""));
+                cmd.push_str(&format!(" +\"tabnew +{num} {}\"", shell_escape(path)));
             }
         }
     } else if matches!(editor.as_str(), "vim" | "mvim" | "nvim")
         && env::var("FPP_DISABLE_SPLIT").is_err()
     {
         if let Some((first_path, first_num)) = files_and_nums.first() {
-            cmd.push_str(&format!(" +{first_num} {first_path}"));
+            cmd.push_str(&format!(" +{first_num} {}", shell_escape(first_path)));
             for (path, num) in &files_and_nums[1..] {
-                cmd.push_str(&format!(" +\"vsp +{num} {path}\""));
+                cmd.push_str(&format!(" +\"vsp +{num} {}\"", shell_escape(path)));
             }
         }
     } else {
@@ -144,7 +144,7 @@ fn compose_cd_command(line_objs: &[LineMatch]) -> String {
             .canonicalize()
             .map(|p| p.to_string_lossy().to_string())
             .unwrap_or(expanded);
-        format!("echo \"{abs}\" > ~/.dircopy")
+        format!("echo {} > ~/.dircopy", shell_escape(&abs))
     } else {
         String::new()
     }

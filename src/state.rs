@@ -36,6 +36,7 @@ pub fn get_script_output_path() -> PathBuf {
     get_state_dir().join(".fpp.sh")
 }
 
+#[allow(dead_code)]
 pub fn get_log_path() -> PathBuf {
     get_state_dir().join(".fpp.log")
 }
@@ -103,6 +104,7 @@ pub fn append_script(content: &str) -> Result<()> {
 }
 
 /// Delete selection state file.
+#[allow(dead_code)]
 pub fn delete_selection() -> Result<()> {
     let path = get_selection_path();
     if path.exists() {

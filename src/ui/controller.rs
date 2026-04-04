@@ -1,3 +1,4 @@
+use std::collections::VecDeque;
 use std::io::{self, Write};
 use std::time::Duration;
 
@@ -38,7 +39,7 @@ pub struct Controller {
     mode: Mode,
     command_buffer: String,
     preset_command: Option<String>,
-    execute_keys_queue: Vec<KeyEvent>,
+    execute_keys_queue: VecDeque<KeyEvent>,
     dirty: bool,
     custom_bindings: Vec<KeyBinding>,
     select_all_state: bool,
@@ -65,7 +66,7 @@ impl Controller {
             mode: Mode::Normal,
             command_buffer: String::new(),
             preset_command,
-            execute_keys_queue: keys_queue,
+            execute_keys_queue: VecDeque::from(keys_queue),
             dirty: true,
             custom_bindings: keybindings::read_key_bindings(),
             select_all_state: false,
@@ -110,8 +111,7 @@ impl Controller {
 
     fn event_loop(&mut self, stdout: &mut io::Stdout) -> Result<()> {
         // Process any queued execute-keys first
-        while let Some(key) = self.execute_keys_queue.first().copied() {
-            self.execute_keys_queue.remove(0);
+        while let Some(key) = self.execute_keys_queue.pop_front() {
             match self.handle_key(key)? {
                 Action::Continue => {
                     self.dirty = true;
@@ -624,22 +624,26 @@ enum Action {
 /// Parse a key sequence string into KeyEvents (for --execute-keys flag).
 fn execute_keys_from_str(keys: &str) -> Vec<KeyEvent> {
     keys.split_whitespace()
-        .filter_map(|k| match k.to_uppercase().as_str() {
-            "UP" => Some(KeyEvent::new(KeyCode::Up, KeyModifiers::NONE)),
-            "DOWN" => Some(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE)),
-            "LEFT" => Some(KeyEvent::new(KeyCode::Left, KeyModifiers::NONE)),
-            "RIGHT" => Some(KeyEvent::new(KeyCode::Right, KeyModifiers::NONE)),
-            "HOME" => Some(KeyEvent::new(KeyCode::Home, KeyModifiers::NONE)),
-            "END" => Some(KeyEvent::new(KeyCode::End, KeyModifiers::NONE)),
-            "PAGEUP" | "NPAGE" => Some(KeyEvent::new(KeyCode::PageUp, KeyModifiers::NONE)),
-            "PAGEDOWN" | "PPAGE" => Some(KeyEvent::new(KeyCode::PageDown, KeyModifiers::NONE)),
-            "ENTER" => Some(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)),
-            "SPACE" => Some(KeyEvent::new(KeyCode::Char(' '), KeyModifiers::NONE)),
-            s if s.len() == 1 => {
-                let ch = s.chars().next().unwrap();
-                Some(KeyEvent::new(KeyCode::Char(ch), KeyModifiers::NONE))
+        .filter_map(|k| {
+            // Match named keys case-insensitively, but preserve original case for single chars
+            match k.to_uppercase().as_str() {
+                "UP" => Some(KeyEvent::new(KeyCode::Up, KeyModifiers::NONE)),
+                "DOWN" => Some(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE)),
+                "LEFT" => Some(KeyEvent::new(KeyCode::Left, KeyModifiers::NONE)),
+                "RIGHT" => Some(KeyEvent::new(KeyCode::Right, KeyModifiers::NONE)),
+                "HOME" => Some(KeyEvent::new(KeyCode::Home, KeyModifiers::NONE)),
+                "END" => Some(KeyEvent::new(KeyCode::End, KeyModifiers::NONE)),
+                "PAGEUP" | "NPAGE" => Some(KeyEvent::new(KeyCode::PageUp, KeyModifiers::NONE)),
+                "PAGEDOWN" | "PPAGE" => Some(KeyEvent::new(KeyCode::PageDown, KeyModifiers::NONE)),
+                "ENTER" => Some(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)),
+                "SPACE" => Some(KeyEvent::new(KeyCode::Char(' '), KeyModifiers::NONE)),
+                _ if k.len() == 1 => {
+                    // Use original char to preserve case: 'f' != 'F'
+                    let ch = k.chars().next().unwrap();
+                    Some(KeyEvent::new(KeyCode::Char(ch), KeyModifiers::NONE))
+                }
+                _ => None,
             }
-            _ => None,
         })
         .collect()
 }

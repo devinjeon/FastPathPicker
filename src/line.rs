@@ -15,8 +15,10 @@ pub struct LineMatch {
     pub formatted_text: FormattedText,
     pub path: String,
     pub line_num: u64,
+    #[allow(dead_code)]
     pub index: usize,
     pub selected: bool,
+    #[allow(dead_code)]
     pub hovered: bool,
     original_line: String,
 }
@@ -25,6 +27,7 @@ pub struct LineMatch {
 #[derive(Debug, Clone)]
 pub struct SimpleLine {
     pub formatted_text: FormattedText,
+    #[allow(dead_code)]
     pub index: usize,
     original_line: String,
 }
@@ -143,6 +146,7 @@ impl SimpleLine {
 }
 
 impl Line {
+    #[allow(dead_code)]
     pub fn index(&self) -> usize {
         match self {
             Line::Match(m) => m.index,
@@ -224,7 +228,7 @@ fn format_system_time(time: SystemTime) -> String {
     }
     let day = remaining_days + 1;
 
-    format!("{year}-{month:02}-{day:02} {hours:02}:{mins:02}:{secs:02}")
+    format!("{year}-{month:02}-{day:02} {hours:02}:{mins:02}:{secs:02} UTC")
 }
 
 fn is_leap_year(year: i64) -> bool {
