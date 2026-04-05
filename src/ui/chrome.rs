@@ -44,7 +44,9 @@ impl Chrome {
 
 /// Usage strings shown in the UI.
 pub const USAGE_HEADER: &str =
-    "  [fpp] Use arrow keys or j/k to navigate, f to select, ENTER to open";
+    "  [fpp] j/k:navigate  f:select  A:select-all  c:command  x:quick-select  ENTER:open  q:quit";
+pub const USAGE_HEADER_ALL_INPUT: &str =
+    "  [fpp] j/k:navigate  f:select  A:select-all  c:command  x:quick-select  q:quit";
 pub const USAGE_COMMAND: &str =
     "  [fpp] Type a command, press ENTER to execute (use $F for filenames)";
 pub const USAGE_XMODE: &str = "  [fpp] Quick select mode: press a label to toggle selection";

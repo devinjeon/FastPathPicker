@@ -5,6 +5,8 @@ use std::path::PathBuf;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
+use crate::logger;
+
 /// Selection state persisted between sessions.
 #[derive(Debug, Serialize, Deserialize, Default)]
 pub struct SelectionState {
@@ -44,6 +46,10 @@ pub fn get_keybindings_path() -> PathBuf {
     get_state_dir().join(".fpp.keys")
 }
 
+pub fn get_input_cache_path() -> PathBuf {
+    get_state_dir().join(".input.json")
+}
+
 /// Save selection state to disk.
 pub fn save_selection(state: &SelectionState) -> Result<()> {
     ensure_state_dir()?;
@@ -53,6 +59,7 @@ pub fn save_selection(state: &SelectionState) -> Result<()> {
 }
 
 /// Load selection state from disk.
+#[allow(dead_code)]
 pub fn load_selection() -> Result<SelectionState> {
     let path = get_selection_path();
     if !path.exists() {
@@ -63,29 +70,54 @@ pub fn load_selection() -> Result<SelectionState> {
     Ok(state)
 }
 
-/// Clean all state files.
+/// Save raw input lines to cache for stdin re-use (replaces Python's pickle).
+pub fn save_input_cache(lines: &[String]) -> Result<()> {
+    ensure_state_dir()?;
+    let json = serde_json::to_string(lines)?;
+    fs::write(get_input_cache_path(), json)?;
+    Ok(())
+}
+
+/// Load cached input lines for stdin re-use.
+pub fn load_input_cache() -> Result<Vec<String>> {
+    let path = get_input_cache_path();
+    if !path.exists() {
+        anyhow::bail!("No cached input found");
+    }
+    let data = fs::read_to_string(path)?;
+    let lines: Vec<String> = serde_json::from_str(&data)?;
+    Ok(lines)
+}
+
+/// Clean specific state files (like Python: pickle, selection, log, script).
+/// Python cleans: .pickle, .selection.pickle, .fpp.log, .fpp.sh
+/// (does NOT clean keybindings)
 pub fn clean_state() -> Result<()> {
-    let dir = get_state_dir();
-    if dir.exists() {
-        for entry in fs::read_dir(&dir)? {
-            let entry = entry?;
-            let path = entry.path();
-            if path.is_file() {
-                fs::remove_file(path)?;
-            }
+    let state_files = [
+        get_script_output_path(),
+        get_selection_path(),
+        get_input_cache_path(),
+        get_state_dir().join(".fpp.log"),
+    ];
+    for path in &state_files {
+        if path.exists() {
+            fs::remove_file(path)?;
         }
     }
     Ok(())
 }
 
 /// Write the output shell script.
+/// Python: write_to_file calls logger.output() after writing.
 pub fn write_script(content: &str) -> Result<()> {
     ensure_state_dir()?;
-    fs::write(get_script_output_path(), content)?;
+    fs::write(get_script_output_path(), format!("{content}\n"))?;
+    let _ = logger::output();
     Ok(())
 }
 
 /// Append to the output shell script.
+/// Python: append_to_file calls logger.output() after appending.
 pub fn append_script(content: &str) -> Result<()> {
     use std::io::Write;
     ensure_state_dir()?;
@@ -95,6 +127,7 @@ pub fn append_script(content: &str) -> Result<()> {
         .append(true)
         .open(path)?;
     writeln!(file, "{content}")?;
+    let _ = logger::output();
     Ok(())
 }
 

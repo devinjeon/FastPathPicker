@@ -41,8 +41,9 @@ fn parse_key_bindings(content: &str) -> Vec<KeyBinding> {
 
         if in_bindings_section {
             if let Some((key, command)) = trimmed.split_once('=') {
+                // Lowercase keys like Python's configparser
                 bindings.push(KeyBinding {
-                    key: key.trim().to_string(),
+                    key: key.trim().to_lowercase(),
                     command: command.trim().to_string(),
                 });
             }

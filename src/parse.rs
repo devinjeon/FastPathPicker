@@ -6,11 +6,15 @@ use std::sync::LazyLock;
 
 use regex::Regex;
 
-/// Result of matching a line: (file_path, line_number)
+/// Result of matching a line: (file_path, line_number, match_start, match_end)
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MatchResult {
     pub path: String,
     pub line_num: u64,
+    /// Start position of the match within the line (character index)
+    pub match_start: usize,
+    /// End position of the match within the line (character index)
+    pub match_end: usize,
 }
 
 /// Configuration for each regex in the waterfall.
@@ -133,7 +137,7 @@ static REGEX_WATERFALL: LazyLock<Vec<RegexConfig>> = LazyLock::new(|| {
             regex: &MASTER_REGEX_WITH_SPACES_AND_WEIRD_FILES,
             preferred_regex: None,
             num_index: 5, // adjusted for Rust regex capture group numbering
-            no_num: true,
+            no_num: false,
             only_with_file_inspection: true,
             with_all_lines_matched: false,
         },
@@ -241,7 +245,20 @@ fn unpack_match(captures: &regex::Captures, num_index: usize, no_num: bool) -> M
             .and_then(|m| m.as_str().parse::<u64>().ok())
             .unwrap_or(0)
     };
-    MatchResult { path, line_num }
+    // Store match position (from group 0 = full match)
+    let full_match = captures.get(0).unwrap();
+    let match_start = full_match.start();
+    let mut match_end = full_match.end();
+    // Python strips trailing whitespace from the match group
+    let matched_str = &full_match.as_str();
+    let stripped = matched_str.trim_end();
+    match_end -= matched_str.len() - stripped.len();
+    MatchResult {
+        path,
+        line_num,
+        match_start,
+        match_end,
+    }
 }
 
 /// Internal implementation: collect all regex matches for a line.
@@ -327,7 +344,12 @@ pub fn prepend_dir(file: &str, with_file_inspection: bool) -> String {
 
     let first = file.split('/').next().unwrap_or("");
 
-    if first == "home" && env::var("FPP_DISABLE_PREPENDING_HOME_WITH_SLASH").is_err() {
+    if first == "home"
+        && env::var("FPP_DISABLE_PREPENDING_HOME_WITH_SLASH")
+            .ok()
+            .filter(|v| !v.is_empty())
+            .is_none()
+    {
         return format!("/{file}");
     }
 
@@ -386,8 +408,9 @@ fn get_repos() -> &'static Vec<String> {
     static REPOS: LazyLock<Vec<String>> = LazyLock::new(|| {
         let mut repos = vec![
             "www".to_string(),
-            "fbcode".to_string(),
             "configerator".to_string(),
+            "fbcode".to_string(),
+            "configerator-dsi".to_string(),
         ];
         if let Ok(extra) = env::var("FPP_REPOS") {
             for r in extra.split(',') {

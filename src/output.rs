@@ -3,6 +3,7 @@ use std::env;
 use anyhow::Result;
 
 use crate::line::LineMatch;
+use crate::logger;
 use crate::state;
 
 const RED_COLOR: &str = "\x1b[0;31m";
@@ -30,6 +31,7 @@ pub fn exec_composed_command(command: &str, line_objs: &[LineMatch]) -> Result<(
         return edit_files(line_objs);
     }
 
+    logger::add_event("command_on_num_files", Some(line_objs.len()));
     let composed = compose_command(command, line_objs);
     append_alias_expansion()?;
     append_if_invalid(line_objs)?;
@@ -39,6 +41,7 @@ pub fn exec_composed_command(command: &str, line_objs: &[LineMatch]) -> Result<(
 
 /// Open selected files in the user's editor.
 fn edit_files(line_objs: &[LineMatch]) -> Result<()> {
+    logger::add_event("editing_num_files", Some(line_objs.len()));
     let files_and_nums: Vec<(&str, u64)> = line_objs
         .iter()
         .map(|obj| (obj.get_path(), obj.get_line_num()))
@@ -55,19 +58,24 @@ fn join_files_into_command(files_and_nums: &[(&str, u64)]) -> String {
     let mut cmd = format!("{editor_path} ");
 
     if editor == "vim -p" {
+        // vim -p mode: no quoting on paths (like Python)
         if let Some((first_path, first_num)) = files_and_nums.first() {
-            cmd.push_str(&format!(" +{first_num} {}", shell_escape(first_path)));
+            cmd.push_str(&format!(" +{first_num} {first_path}"));
             for (path, num) in &files_and_nums[1..] {
-                cmd.push_str(&format!(" +\"tabnew +{num} {}\"", shell_escape(path)));
+                cmd.push_str(&format!(" +\"tabnew +{num} {path}\""));
             }
         }
     } else if matches!(editor.as_str(), "vim" | "mvim" | "nvim")
-        && env::var("FPP_DISABLE_SPLIT").is_err()
+        && env::var("FPP_DISABLE_SPLIT")
+            .ok()
+            .filter(|v| !v.is_empty())
+            .is_none()
     {
+        // vim split mode: no quoting on paths (like Python)
         if let Some((first_path, first_num)) = files_and_nums.first() {
-            cmd.push_str(&format!(" +{first_num} {}", shell_escape(first_path)));
+            cmd.push_str(&format!(" +{first_num} {first_path}"));
             for (path, num) in &files_and_nums[1..] {
-                cmd.push_str(&format!(" +\"vsp +{num} {}\"", shell_escape(path)));
+                cmd.push_str(&format!(" +\"vsp +{num} {path}\""));
             }
         }
     } else {
@@ -144,7 +152,8 @@ fn compose_cd_command(line_objs: &[LineMatch]) -> String {
             .canonicalize()
             .map(|p| p.to_string_lossy().to_string())
             .unwrap_or(expanded);
-        format!("echo {} > ~/.dircopy", shell_escape(&abs))
+        // Python uses double quotes: echo "{path}" > ~/.dircopy
+        format!("echo \"{}\" > ~/.dircopy", abs.replace('"', "\\\""))
     } else {
         String::new()
     }
@@ -182,6 +191,8 @@ fn append_if_invalid(line_objs: &[LineMatch]) -> Result<()> {
 }
 
 fn append_alias_expansion() -> Result<()> {
+    // Python: `shell is None or "fish" not in shell` — when SHELL is unset,
+    // alias expansion IS written (because `None is None` is True).
     let shell = env::var("SHELL").unwrap_or_default();
     if !shell.contains("fish") {
         state::append_script(
@@ -196,13 +207,8 @@ fi
 }
 
 fn append_friendly_command(command: &str) -> Result<()> {
-    // Escape for safe use inside double quotes (handles ", $, `, \, !)
-    let escaped = command
-        .replace('\\', "\\\\")
-        .replace('"', "\\\"")
-        .replace('$', "\\$")
-        .replace('`', "\\`")
-        .replace('!', "\\!");
+    // Python only escapes " to \" in the echo command (matching original behavior)
+    let escaped = command.replace('"', "\\\"");
     state::append_script(&format!("echo \"executing command:\"\necho \"{escaped}\""))?;
     state::append_script(command)
 }
@@ -273,6 +279,8 @@ mod tests {
             path.to_string(),
             0,
             path.to_string(),
+            0,
+            path.len(),
         )
     }
 }

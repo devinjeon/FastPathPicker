@@ -4,18 +4,10 @@ use crate::format::FormattedText;
 use crate::line::{Line, LineMatch, SimpleLine};
 use crate::parse;
 
-/// Process stdin and return parsed line objects.
-pub fn get_line_objs_from_stdin(
-    validate_file_exists: bool,
-    all_input: bool,
-) -> io::Result<Vec<Line>> {
+/// Read raw lines from stdin.
+pub fn read_stdin_lines() -> io::Result<Vec<String>> {
     let stdin = io::stdin();
-    let lines: Vec<String> = stdin.lock().lines().collect::<io::Result<Vec<_>>>()?;
-    Ok(get_line_objs_from_lines(
-        &lines,
-        validate_file_exists,
-        all_input,
-    ))
+    stdin.lock().lines().collect()
 }
 
 /// Process a list of lines and return parsed line objects.
@@ -30,13 +22,25 @@ pub fn get_line_objs_from_lines(
             let expanded = line.replace('\t', "    ");
             let formatted = FormattedText::new(&expanded);
 
-            match parse::match_line(&expanded, validate_file_exists, all_input) {
-                Some(result) => Line::Match(LineMatch::new(
-                    formatted,
-                    result.path,
-                    result.line_num,
-                    expanded,
-                )),
+            // Match regex on ANSI-stripped plain text (like Python's str(formatted_line))
+            match parse::match_line(formatted.plain_text(), validate_file_exists, all_input) {
+                Some(result) => {
+                    // Python resolves path at construction time:
+                    // self.path = path if all_input else parse.prepend_dir(path, ...)
+                    let resolved_path = if all_input {
+                        result.path.clone()
+                    } else {
+                        parse::prepend_dir(&result.path, validate_file_exists)
+                    };
+                    Line::Match(LineMatch::new(
+                        formatted,
+                        resolved_path,
+                        result.line_num,
+                        expanded,
+                        result.match_start,
+                        result.match_end,
+                    ))
+                }
                 None => Line::Simple(SimpleLine::new(formatted, expanded)),
             }
         })

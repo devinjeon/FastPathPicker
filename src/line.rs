@@ -17,6 +17,10 @@ pub struct LineMatch {
     pub line_num: u64,
     pub selected: bool,
     original_line: String,
+    /// Start position of the match within the plain text (character index)
+    pub match_start: usize,
+    /// End position of the match within the plain text (character index)
+    pub match_end: usize,
 }
 
 /// Represents a line that did not match any file path.
@@ -39,6 +43,8 @@ impl LineMatch {
         path: String,
         line_num: u64,
         original_line: String,
+        match_start: usize,
+        match_end: usize,
     ) -> Self {
         Self {
             formatted_text,
@@ -46,6 +52,8 @@ impl LineMatch {
             line_num,
             selected: false,
             original_line,
+            match_start,
+            match_end,
         }
     }
 
@@ -58,10 +66,11 @@ impl LineMatch {
     }
 
     pub fn get_dir(&self) -> String {
-        let resolved = parse::prepend_dir(&self.path, false);
-        Path::new(&resolved)
+        // path is already resolved at construction time (prepend_dir called in input.rs)
+        // Python: os.path.dirname(self.path)
+        Path::new(&self.path)
             .parent()
-            .map_or(resolved.clone(), |p| p.to_string_lossy().to_string())
+            .map_or(self.path.clone(), |p| p.to_string_lossy().to_string())
     }
 
     pub fn is_resolvable(&self) -> bool {
@@ -77,9 +86,10 @@ impl LineMatch {
     }
 
     /// Get file description metadata for the sidebar display.
+    /// Matches Python's format: local time mm/dd/YYYY, user/group names, wc -l style.
     pub fn get_file_description(&self) -> Vec<String> {
-        let resolved = parse::prepend_dir(&self.path, true);
-        let path = Path::new(&resolved);
+        // path is already resolved (prepend_dir called at construction time)
+        let path = Path::new(&self.path);
 
         let metadata = match path.metadata() {
             Ok(m) => m,
@@ -93,33 +103,47 @@ impl LineMatch {
 
         let mut desc = Vec::new();
 
-        // Last accessed time
+        // Python: last accessed: mm/dd/YYYY HH:MM:SS (local time)
         if let Ok(accessed) = metadata.accessed() {
-            desc.push(format!("Last accessed: {}", format_system_time(accessed)));
+            desc.push(format!(
+                "last accessed: {}",
+                format_system_time_local(accessed)
+            ));
         }
 
-        // Last modified time
+        // Python: last modified: mm/dd/YYYY HH:MM:SS (local time)
         if let Ok(modified) = metadata.modified() {
-            desc.push(format!("Last modified: {}", format_system_time(modified)));
+            desc.push(format!(
+                "last modified: {}",
+                format_system_time_local(modified)
+            ));
         }
 
-        // Owner user/group (Unix only)
+        // Python: owned by user: username, uid / owned by group: groupname, gid
         #[cfg(unix)]
         {
             let uid = metadata.uid();
-            desc.push(format!("Owner: {uid}"));
+            let username = get_username(uid).unwrap_or_else(|| uid.to_string());
+            desc.push(format!("owned by user: {username}, {uid}"));
+
             let gid = metadata.gid();
-            desc.push(format!("Group: {gid}"));
+            let groupname = get_groupname(gid).unwrap_or_else(|| gid.to_string());
+            desc.push(format!("owned by group: {groupname}, {gid}"));
         }
 
-        // File size
+        // Python: size: 42K (integer division, single-letter suffix)
         let size = metadata.len();
-        desc.push(format!("Size: {}", format_size(size)));
+        desc.push(format!("size: {}", format_size_python(size)));
 
-        // Line count (read directly instead of spawning wc)
-        if let Ok(file) = File::open(&resolved) {
-            let line_count = BufReader::new(file).lines().count();
-            desc.push(format!("Lines: {line_count}"));
+        // Python: length: N lines (or line)
+        if size < 10 * 1024 * 1024 {
+            if let Ok(file) = File::open(&self.path) {
+                let line_count = BufReader::new(file).lines().count();
+                let caption = if line_count == 1 { "line" } else { "lines" };
+                desc.push(format!("length: {line_count} {caption}"));
+            }
+        } else {
+            desc.push("length: (file too large)".to_string());
         }
 
         desc
@@ -171,20 +195,22 @@ impl fmt::Display for Line {
     }
 }
 
-fn format_system_time(time: SystemTime) -> String {
+/// Format SystemTime as local time in Python's mm/dd/YYYY HH:MM:SS format.
+fn format_system_time_local(time: SystemTime) -> String {
     let duration = time
         .duration_since(SystemTime::UNIX_EPOCH)
         .unwrap_or_default();
     let total_secs = duration.as_secs() as i64;
 
-    // Calculate date/time components from Unix timestamp
-    let days_since_epoch = total_secs / 86400;
-    let time_of_day = total_secs % 86400;
+    // Get local timezone offset (approximate: use libc on Unix)
+    let local_secs = total_secs + get_utc_offset(total_secs);
+
+    let days_since_epoch = local_secs / 86400;
+    let time_of_day = local_secs.rem_euclid(86400);
     let hours = time_of_day / 3600;
     let mins = (time_of_day % 3600) / 60;
     let secs = time_of_day % 60;
 
-    // Simple date calculation (good enough for display purposes)
     let mut year = 1970i64;
     let mut remaining_days = days_since_epoch;
     loop {
@@ -210,21 +236,64 @@ fn format_system_time(time: SystemTime) -> String {
     }
     let day = remaining_days + 1;
 
-    format!("{year}-{month:02}-{day:02} {hours:02}:{mins:02}:{secs:02} UTC")
+    // Python format: %m/%d/%Y %H:%M:%S
+    format!("{month:02}/{day:02}/{year} {hours:02}:{mins:02}:{secs:02}")
+}
+
+/// Get UTC offset in seconds for a given Unix timestamp.
+#[cfg(unix)]
+fn get_utc_offset(unix_time: i64) -> i64 {
+    use std::mem::MaybeUninit;
+    unsafe {
+        let mut tm = MaybeUninit::zeroed().assume_init();
+        libc::localtime_r(&unix_time, &mut tm);
+        tm.tm_gmtoff
+    }
+}
+
+#[cfg(not(unix))]
+fn get_utc_offset(_unix_time: i64) -> i64 {
+    0
 }
 
 fn is_leap_year(year: i64) -> bool {
     (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0)
 }
 
-fn format_size(bytes: u64) -> String {
-    if bytes < 1024 {
-        format!("{bytes} B")
-    } else if bytes < 1024 * 1024 {
-        format!("{:.1} KB", bytes as f64 / 1024.0)
-    } else if bytes < 1024 * 1024 * 1024 {
-        format!("{:.1} MB", bytes as f64 / (1024.0 * 1024.0))
-    } else {
-        format!("{:.1} GB", bytes as f64 / (1024.0 * 1024.0 * 1024.0))
+/// Format size like Python: "size: 42K" (integer division, single-letter suffix)
+fn format_size_python(bytes: u64) -> String {
+    let mut size = bytes;
+    for unit in ["B", "K", "M", "G", "T", "P", "E", "Z"] {
+        if size < 1024 {
+            return format!("{size}{unit}");
+        }
+        size /= 1024;
+    }
+    format!("{size}Y")
+}
+
+/// Get username from uid (Unix only)
+#[cfg(unix)]
+fn get_username(uid: u32) -> Option<String> {
+    unsafe {
+        let pw = libc::getpwuid(uid);
+        if pw.is_null() {
+            return None;
+        }
+        let name = std::ffi::CStr::from_ptr((*pw).pw_name);
+        Some(name.to_string_lossy().into_owned())
+    }
+}
+
+/// Get group name from gid (Unix only)
+#[cfg(unix)]
+fn get_groupname(gid: u32) -> Option<String> {
+    unsafe {
+        let gr = libc::getgrgid(gid);
+        if gr.is_null() {
+            return None;
+        }
+        let name = std::ffi::CStr::from_ptr((*gr).gr_name);
+        Some(name.to_string_lossy().into_owned())
     }
 }
