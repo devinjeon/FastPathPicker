@@ -1,15 +1,9 @@
 /// UI chrome dimensions and layout.
 pub struct Chrome {
-    #[allow(dead_code)]
-    pub width: u16,
-    #[allow(dead_code)]
-    pub height: u16,
     pub is_wide: bool,
     pub sidebar_width: u16,
     pub content_width: u16,
     pub content_height: u16,
-    #[allow(dead_code)]
-    pub info_lines: u16,
 }
 
 const WIDE_MODE_THRESHOLD: u16 = 200;
@@ -25,13 +19,10 @@ impl Chrome {
         let content_height = height.saturating_sub(info_lines);
 
         Self {
-            width,
-            height,
             is_wide,
             sidebar_width,
             content_width,
             content_height,
-            info_lines,
         }
     }
 
@@ -54,7 +45,6 @@ impl Chrome {
 /// Usage strings shown in the UI.
 pub const USAGE_HEADER: &str =
     "  [fpp] Use arrow keys or j/k to navigate, f to select, ENTER to open";
-#[allow(dead_code)]
 pub const USAGE_COMMAND: &str =
     "  [fpp] Type a command, press ENTER to execute (use $F for filenames)";
 pub const USAGE_XMODE: &str = "  [fpp] Quick select mode: press a label to toggle selection";

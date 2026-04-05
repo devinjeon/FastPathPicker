@@ -15,11 +15,7 @@ pub struct LineMatch {
     pub formatted_text: FormattedText,
     pub path: String,
     pub line_num: u64,
-    #[allow(dead_code)]
-    pub index: usize,
     pub selected: bool,
-    #[allow(dead_code)]
-    pub hovered: bool,
     original_line: String,
 }
 
@@ -27,8 +23,6 @@ pub struct LineMatch {
 #[derive(Debug, Clone)]
 pub struct SimpleLine {
     pub formatted_text: FormattedText,
-    #[allow(dead_code)]
-    pub index: usize,
     original_line: String,
 }
 
@@ -44,16 +38,13 @@ impl LineMatch {
         formatted_text: FormattedText,
         path: String,
         line_num: u64,
-        index: usize,
         original_line: String,
     ) -> Self {
         Self {
             formatted_text,
             path,
             line_num,
-            index,
             selected: false,
-            hovered: false,
             original_line,
         }
     }
@@ -136,24 +127,15 @@ impl LineMatch {
 }
 
 impl SimpleLine {
-    pub fn new(formatted_text: FormattedText, index: usize, original_line: String) -> Self {
+    pub fn new(formatted_text: FormattedText, original_line: String) -> Self {
         Self {
             formatted_text,
-            index,
             original_line,
         }
     }
 }
 
 impl Line {
-    #[allow(dead_code)]
-    pub fn index(&self) -> usize {
-        match self {
-            Line::Match(m) => m.index,
-            Line::Simple(s) => s.index,
-        }
-    }
-
     pub fn formatted_text(&self) -> &FormattedText {
         match self {
             Line::Match(m) => &m.formatted_text,

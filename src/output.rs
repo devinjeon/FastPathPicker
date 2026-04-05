@@ -272,7 +272,6 @@ mod tests {
             FormattedText::new(path),
             path.to_string(),
             0,
-            0,
             path.to_string(),
         )
     }

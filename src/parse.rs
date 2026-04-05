@@ -15,8 +15,6 @@ pub struct MatchResult {
 
 /// Configuration for each regex in the waterfall.
 struct RegexConfig {
-    #[allow(dead_code)]
-    name: &'static str,
     regex: &'static LazyLock<Regex>,
     preferred_regex: Option<&'static LazyLock<Regex>>,
     num_index: usize,
@@ -92,7 +90,6 @@ static MASTER_REGEX_WITH_SPACES_AND_WEIRD_FILES: LazyLock<Regex> = LazyLock::new
 static REGEX_WATERFALL: LazyLock<Vec<RegexConfig>> = LazyLock::new(|| {
     vec![
         RegexConfig {
-            name: "HOMEDIR_REGEX",
             regex: &HOMEDIR_REGEX,
             preferred_regex: None,
             num_index: 2,
@@ -101,7 +98,6 @@ static REGEX_WATERFALL: LazyLock<Vec<RegexConfig>> = LazyLock::new(|| {
             with_all_lines_matched: false,
         },
         RegexConfig {
-            name: "MASTER_REGEX",
             regex: &MASTER_REGEX,
             preferred_regex: Some(&OTHER_BGS_RESULT_REGEX),
             num_index: 2,
@@ -110,7 +106,6 @@ static REGEX_WATERFALL: LazyLock<Vec<RegexConfig>> = LazyLock::new(|| {
             with_all_lines_matched: false,
         },
         RegexConfig {
-            name: "OTHER_BGS_RESULT_REGEX",
             regex: &OTHER_BGS_RESULT_REGEX,
             preferred_regex: None,
             num_index: 2,
@@ -119,7 +114,6 @@ static REGEX_WATERFALL: LazyLock<Vec<RegexConfig>> = LazyLock::new(|| {
             with_all_lines_matched: false,
         },
         RegexConfig {
-            name: "MASTER_REGEX_MORE_EXTENSIONS",
             regex: &MASTER_REGEX_MORE_EXTENSIONS,
             preferred_regex: None,
             num_index: 2,
@@ -128,7 +122,6 @@ static REGEX_WATERFALL: LazyLock<Vec<RegexConfig>> = LazyLock::new(|| {
             with_all_lines_matched: false,
         },
         RegexConfig {
-            name: "MASTER_REGEX_WITH_SPACES",
             regex: &MASTER_REGEX_WITH_SPACES,
             preferred_regex: None,
             num_index: 5, // adjusted for Rust regex capture group numbering
@@ -137,7 +130,6 @@ static REGEX_WATERFALL: LazyLock<Vec<RegexConfig>> = LazyLock::new(|| {
             with_all_lines_matched: false,
         },
         RegexConfig {
-            name: "MASTER_REGEX_WITH_SPACES_AND_WEIRD_FILES",
             regex: &MASTER_REGEX_WITH_SPACES_AND_WEIRD_FILES,
             preferred_regex: None,
             num_index: 5, // adjusted for Rust regex capture group numbering
@@ -146,7 +138,6 @@ static REGEX_WATERFALL: LazyLock<Vec<RegexConfig>> = LazyLock::new(|| {
             with_all_lines_matched: false,
         },
         RegexConfig {
-            name: "JUST_VIM_TEMP_FILE",
             regex: &JUST_VIM_TEMP_FILE,
             preferred_regex: None,
             num_index: 2,
@@ -155,7 +146,6 @@ static REGEX_WATERFALL: LazyLock<Vec<RegexConfig>> = LazyLock::new(|| {
             with_all_lines_matched: false,
         },
         RegexConfig {
-            name: "JUST_EMACS_TEMP_FILE",
             regex: &JUST_EMACS_TEMP_FILE,
             preferred_regex: None,
             num_index: 2,
@@ -164,7 +154,6 @@ static REGEX_WATERFALL: LazyLock<Vec<RegexConfig>> = LazyLock::new(|| {
             with_all_lines_matched: false,
         },
         RegexConfig {
-            name: "JUST_FILE_WITH_NUMBER",
             regex: &JUST_FILE_WITH_NUMBER,
             preferred_regex: None,
             num_index: 1,
@@ -173,7 +162,6 @@ static REGEX_WATERFALL: LazyLock<Vec<RegexConfig>> = LazyLock::new(|| {
             with_all_lines_matched: false,
         },
         RegexConfig {
-            name: "JUST_FILE",
             regex: &JUST_FILE,
             preferred_regex: None,
             num_index: 2,
@@ -182,7 +170,6 @@ static REGEX_WATERFALL: LazyLock<Vec<RegexConfig>> = LazyLock::new(|| {
             with_all_lines_matched: false,
         },
         RegexConfig {
-            name: "JUST_FILE_WITH_SPACES",
             regex: &JUST_FILE_WITH_SPACES,
             preferred_regex: None,
             num_index: 2,
@@ -191,7 +178,6 @@ static REGEX_WATERFALL: LazyLock<Vec<RegexConfig>> = LazyLock::new(|| {
             with_all_lines_matched: false,
         },
         RegexConfig {
-            name: "FILE_NO_PERIODS",
             regex: &FILE_NO_PERIODS,
             preferred_regex: None,
             num_index: 2,
@@ -200,7 +186,6 @@ static REGEX_WATERFALL: LazyLock<Vec<RegexConfig>> = LazyLock::new(|| {
             with_all_lines_matched: false,
         },
         RegexConfig {
-            name: "ENTIRE_TRIMMED_LINE_IF_NOT_WHITESPACE",
             regex: &ENTIRE_TRIMMED_LINE_IF_NOT_WHITESPACE,
             preferred_regex: None,
             num_index: 2,

@@ -438,8 +438,6 @@ impl Controller {
         let scrollbar = ScrollBar::new(self.match_indices.len(), chrome.content_height as usize);
         let has_scrollbar = scrollbar.is_active();
         let in_xmode = self.mode == Mode::QuickSelect;
-        // content_start_x is used implicitly via text_width calculation
-        let _ = chrome.content_start_x(has_scrollbar, in_xmode);
         let text_width = chrome.text_width(has_scrollbar, in_xmode) as usize;
 
         execute!(stdout, terminal::Clear(ClearType::All))?;
@@ -597,6 +595,13 @@ impl Controller {
                     cursor::MoveTo(0, info_y + 1),
                     style::Print(format!(" > {}", self.command_buffer)),
                 )?;
+                execute!(
+                    stdout,
+                    cursor::MoveTo(0, info_y + 2),
+                    SetForegroundColor(Color::DarkGrey),
+                    style::Print(super::chrome::USAGE_COMMAND),
+                    SetForegroundColor(Color::Reset),
+                )?;
             } else {
                 let usage = match self.mode {
                     Mode::QuickSelect => super::chrome::USAGE_XMODE,
@@ -658,13 +663,11 @@ mod tests {
     fn make_test_lines(paths: &[&str]) -> (Vec<Line>, Vec<usize>) {
         let lines: Vec<Line> = paths
             .iter()
-            .enumerate()
-            .map(|(i, path)| {
+            .map(|path| {
                 Line::Match(LineMatch::new(
                     FormattedText::new(path),
                     path.to_string(),
                     0,
-                    i,
                     path.to_string(),
                 ))
             })

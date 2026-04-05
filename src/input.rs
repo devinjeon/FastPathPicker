@@ -26,8 +26,7 @@ pub fn get_line_objs_from_lines(
 ) -> Vec<Line> {
     lines
         .iter()
-        .enumerate()
-        .map(|(index, line)| {
+        .map(|line| {
             let expanded = line.replace('\t', "    ");
             let formatted = FormattedText::new(&expanded);
 
@@ -36,10 +35,9 @@ pub fn get_line_objs_from_lines(
                     formatted,
                     result.path,
                     result.line_num,
-                    index,
                     expanded,
                 )),
-                None => Line::Simple(SimpleLine::new(formatted, index, expanded)),
+                None => Line::Simple(SimpleLine::new(formatted, expanded)),
             }
         })
         .collect()
