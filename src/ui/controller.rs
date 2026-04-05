@@ -648,3 +648,135 @@ fn execute_keys_from_str(keys: &str) -> Vec<KeyEvent> {
         })
         .collect()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::format::FormattedText;
+    use crate::line::{Line, LineMatch};
+
+    fn make_test_lines(paths: &[&str]) -> (Vec<Line>, Vec<usize>) {
+        let lines: Vec<Line> = paths
+            .iter()
+            .enumerate()
+            .map(|(i, path)| {
+                Line::Match(LineMatch::new(
+                    FormattedText::new(path),
+                    path.to_string(),
+                    0,
+                    i,
+                    path.to_string(),
+                ))
+            })
+            .collect();
+        let indices: Vec<usize> = (0..lines.len()).collect();
+        (lines, indices)
+    }
+
+    #[test]
+    fn test_move_hover() {
+        let (lines, indices) = make_test_lines(&["a.txt", "b.txt", "c.txt"]);
+        let mut ctrl = Controller::new(lines, indices, None, false, None);
+        assert_eq!(ctrl.hover_index, 0);
+
+        ctrl.move_hover(1);
+        assert_eq!(ctrl.hover_index, 1);
+
+        ctrl.move_hover(1);
+        assert_eq!(ctrl.hover_index, 2);
+
+        // Can't go past end
+        ctrl.move_hover(1);
+        assert_eq!(ctrl.hover_index, 2);
+
+        ctrl.move_hover(-1);
+        assert_eq!(ctrl.hover_index, 1);
+
+        // Can't go before start
+        ctrl.move_hover(-10);
+        assert_eq!(ctrl.hover_index, 0);
+    }
+
+    #[test]
+    fn test_toggle_selection() {
+        let (lines, indices) = make_test_lines(&["a.txt", "b.txt"]);
+        let mut ctrl = Controller::new(lines, indices, None, false, None);
+
+        ctrl.toggle_current_selection();
+        assert!(ctrl.lines[0].as_match().unwrap().selected);
+        assert!(!ctrl.lines[1].as_match().unwrap().selected);
+
+        ctrl.toggle_current_selection();
+        assert!(!ctrl.lines[0].as_match().unwrap().selected);
+    }
+
+    #[test]
+    fn test_toggle_select_all() {
+        let (lines, indices) = make_test_lines(&["a.txt", "b.txt", "c.txt"]);
+        let mut ctrl = Controller::new(lines, indices, None, false, None);
+
+        ctrl.toggle_select_all();
+        assert!(ctrl.lines[0].as_match().unwrap().selected);
+        assert!(ctrl.lines[1].as_match().unwrap().selected);
+        assert!(ctrl.lines[2].as_match().unwrap().selected);
+
+        ctrl.toggle_select_all();
+        assert!(!ctrl.lines[0].as_match().unwrap().selected);
+        assert!(!ctrl.lines[1].as_match().unwrap().selected);
+        assert!(!ctrl.lines[2].as_match().unwrap().selected);
+    }
+
+    #[test]
+    fn test_initial_select_all() {
+        let (lines, indices) = make_test_lines(&["a.txt", "b.txt"]);
+        let ctrl = Controller::new(lines, indices, None, true, None);
+        assert!(ctrl.lines[0].as_match().unwrap().selected);
+        assert!(ctrl.lines[1].as_match().unwrap().selected);
+    }
+
+    #[test]
+    fn test_get_selected_matches_uses_hovered_when_none_selected() {
+        let (lines, indices) = make_test_lines(&["a.txt", "b.txt"]);
+        let ctrl = Controller::new(lines, indices, None, false, None);
+        let selected = ctrl.get_selected_matches();
+        assert_eq!(selected.len(), 1);
+        assert_eq!(selected[0].path, "a.txt");
+    }
+
+    #[test]
+    fn test_get_selected_matches_returns_selected() {
+        let (lines, indices) = make_test_lines(&["a.txt", "b.txt", "c.txt"]);
+        let mut ctrl = Controller::new(lines, indices, None, false, None);
+        ctrl.move_hover(1);
+        ctrl.toggle_current_selection(); // select b.txt
+        ctrl.move_hover(1);
+        ctrl.toggle_current_selection(); // select c.txt
+
+        let selected = ctrl.get_selected_matches();
+        assert_eq!(selected.len(), 2);
+        assert_eq!(selected[0].path, "b.txt");
+        assert_eq!(selected[1].path, "c.txt");
+    }
+
+    #[test]
+    fn test_execute_keys_from_str() {
+        let keys = execute_keys_from_str("f j F END");
+        assert_eq!(keys.len(), 4);
+        assert_eq!(keys[0].code, KeyCode::Char('f'));
+        assert_eq!(keys[1].code, KeyCode::Char('j'));
+        assert_eq!(keys[2].code, KeyCode::Char('F'));
+        assert_eq!(keys[3].code, KeyCode::End);
+    }
+
+    #[test]
+    fn test_jump_to_first_and_last() {
+        let (lines, indices) = make_test_lines(&["a.txt", "b.txt", "c.txt", "d.txt"]);
+        let mut ctrl = Controller::new(lines, indices, None, false, None);
+
+        ctrl.jump_to_last();
+        assert_eq!(ctrl.hover_index, 3);
+
+        ctrl.jump_to_first();
+        assert_eq!(ctrl.hover_index, 0);
+    }
+}
