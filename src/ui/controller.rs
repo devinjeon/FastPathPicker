@@ -120,6 +120,10 @@ impl Controller {
                     self.save_selection()?;
                     return Ok(());
                 }
+                Action::SilentQuit => {
+                    // Python Ctrl-C: sys.exit(0) — no script, no selection save
+                    return Ok(());
+                }
                 Action::Execute => {
                     return self.execute_selection();
                 }
@@ -143,6 +147,10 @@ impl Controller {
                                 self.save_selection()?;
                                 return Ok(());
                             }
+                            Action::SilentQuit => {
+                                // Python Ctrl-C: sys.exit(0) — no script, no selection save
+                                return Ok(());
+                            }
                             Action::Execute => {
                                 return self.execute_selection();
                             }
@@ -159,9 +167,9 @@ impl Controller {
     }
 
     fn handle_key(&mut self, key: KeyEvent) -> Result<Action> {
-        // Ctrl-C always quits
+        // Ctrl-C: silent exit matching Python's signal handler (sys.exit(0))
         if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
-            return Ok(Action::Quit);
+            return Ok(Action::SilentQuit);
         }
 
         match self.mode {
@@ -177,44 +185,47 @@ impl Controller {
     }
 
     fn handle_normal_key(&mut self, key: KeyEvent) -> Result<Action> {
-        match key.code {
-            KeyCode::Char('q') => Ok(Action::Quit),
+        // Python's process_input: built-in if/elif chain runs first, then custom
+        // binding loop runs unconditionally. Custom bindings only matter if the
+        // program hasn't already exited (Quit/Execute exit before the loop).
+        let action = match key.code {
+            KeyCode::Char('q') => Action::Quit,
             KeyCode::Char('j') | KeyCode::Down => {
                 self.move_hover(1);
-                Ok(Action::Continue)
+                Action::Continue
             }
             KeyCode::Char('k') | KeyCode::Up => {
                 self.move_hover(-1);
-                Ok(Action::Continue)
+                Action::Continue
             }
             KeyCode::Char(' ') | KeyCode::PageDown => {
                 self.page_down();
-                Ok(Action::Continue)
+                Action::Continue
             }
             KeyCode::Char('b') | KeyCode::PageUp => {
                 self.page_up();
-                Ok(Action::Continue)
+                Action::Continue
             }
             KeyCode::Char('g') | KeyCode::Home => {
                 self.jump_to_first();
-                Ok(Action::Continue)
+                Action::Continue
             }
             KeyCode::Char('G') | KeyCode::End => {
                 self.jump_to_last();
-                Ok(Action::Continue)
+                Action::Continue
             }
             KeyCode::Char('f') => {
                 self.toggle_current_selection();
-                Ok(Action::Continue)
+                Action::Continue
             }
             KeyCode::Char('F') => {
                 self.toggle_current_selection();
                 self.move_hover(1);
-                Ok(Action::Continue)
+                Action::Continue
             }
             KeyCode::Char('A') => {
                 self.toggle_select_all();
-                Ok(Action::Continue)
+                Action::Continue
             }
             KeyCode::Char('c') => {
                 if self.preset_command.is_some() {
@@ -222,42 +233,51 @@ impl Controller {
                 } else {
                     self.mode = Mode::Command;
                 }
-                Ok(Action::Continue)
+                Action::Continue
             }
             KeyCode::Char('x') => {
                 self.mode = Mode::QuickSelect;
-                Ok(Action::Continue)
+                Action::Continue
             }
             KeyCode::Char('d') => {
                 self.show_description = true;
-                Ok(Action::Continue)
+                Action::Continue
             }
             KeyCode::Enter => {
-                // In all_input mode, Enter only works if a preset command is set
                 if self.all_input && self.preset_command.is_none() {
-                    Ok(Action::Continue)
+                    Action::Continue
                 } else {
-                    Ok(Action::Execute)
+                    Action::Execute
                 }
             }
-            _ => {
-                // Check custom bindings after all built-in keys (like Python)
-                if let KeyCode::Char(ch) = key.code {
-                    for binding in &self.custom_bindings {
-                        if binding.key.len() == 1 && binding.key == ch.to_string() {
-                            return self.execute_custom_binding(&binding.command.clone());
-                        }
+            _ => Action::Continue,
+        };
+
+        // Python: custom bindings fire AFTER built-in keys unconditionally.
+        // In Python, Quit/Execute exit the process before the loop runs,
+        // so custom bindings only effectively fire on Continue actions.
+        if matches!(action, Action::Continue) {
+            if let KeyCode::Char(ch) = key.code {
+                for binding in &self.custom_bindings {
+                    if binding.key.len() == 1 && binding.key == ch.to_string() {
+                        return self.execute_custom_binding(&binding.command.clone());
                     }
                 }
-                Ok(Action::Continue)
             }
         }
+
+        Ok(action)
     }
 
     fn handle_command_key(&mut self, key: KeyEvent) -> Result<Action> {
+        // Python: curses getstr() handles input as a complete line.
+        // Empty Enter returns to selection mode. Esc is an improvement
+        // (not in Python) but harmless for backward compat since Python
+        // doesn't handle Esc in command mode at all.
         match key.code {
             KeyCode::Enter => {
                 if self.command_buffer.is_empty() {
+                    // Python: empty input returns to SELECT_MODE
                     self.mode = Mode::Normal;
                     Ok(Action::Continue)
                 } else {
@@ -270,10 +290,9 @@ impl Controller {
                 Ok(Action::Continue)
             }
             KeyCode::Backspace => {
+                // Python: backspace is handled by curses natively within getstr().
+                // It does NOT exit command mode when buffer becomes empty.
                 self.command_buffer.pop();
-                if self.command_buffer.is_empty() {
-                    self.mode = Mode::Normal;
-                }
                 Ok(Action::Continue)
             }
             KeyCode::Char(ch) => {
@@ -510,6 +529,9 @@ impl Controller {
             return Ok(());
         }
 
+        // Python saves selection on Enter (get_paths_to_use → output_selection)
+        self.save_selection()?;
+
         let command = self
             .preset_command
             .as_deref()
@@ -565,6 +587,13 @@ impl Controller {
         // Warning overlay: render and return (event_loop handles dismissal)
         if self.mode == Mode::Warning {
             self.render_preset_warning(stdout, &chrome)?;
+            stdout.flush()?;
+            return Ok(());
+        }
+
+        // Command mode: show Python-style full-screen command entry UI
+        if self.mode == Mode::Command {
+            self.render_command_mode(stdout, width, height)?;
             stdout.flush()?;
             return Ok(());
         }
@@ -769,6 +798,74 @@ impl Controller {
         Ok(())
     }
 
+    /// Render command mode UI matching Python's show_and_get_command().
+    /// Shows selected paths, prompt text, and command input.
+    fn render_command_mode(&self, stdout: &mut io::Stdout, width: u16, height: u16) -> Result<()> {
+        use super::chrome::{SHORT_COMMAND_PROMPT, SHORT_COMMAND_PROMPT2, SHORT_PATHS_HEADER};
+
+        let paths: Vec<String> = self
+            .get_selected_matches()
+            .iter()
+            .map(|m| m.path.clone())
+            .collect();
+        let max_y = height as i32;
+
+        // Python: begin_height = round(max_y / 2) - len(paths) / 2.0
+        // If begin_height <= 1, use max_y - 6
+        let mut begin_height =
+            ((max_y as f64 / 2.0).round() as i32) - (paths.len() as f64 / 2.0) as i32;
+        if begin_height <= 1 {
+            begin_height = max_y - 6;
+        }
+
+        let border_line: String = "=".repeat(SHORT_COMMAND_PROMPT.len());
+        let prompt_line: String = ".".repeat(SHORT_COMMAND_PROMPT.len());
+        let max_path_length = if width > 200 {
+            SHORT_COMMAND_PROMPT.len() + 18
+        } else {
+            (width as usize).saturating_sub(5)
+        };
+
+        // Print paths header
+        let start_height = begin_height - 1 - paths.len() as i32;
+        let print_at = |stdout: &mut io::Stdout, y: i32, text: &str| -> Result<()> {
+            if y >= 0 && y < max_y {
+                execute!(stdout, cursor::MoveTo(0, y as u16), style::Print(text))?;
+            }
+            Ok(())
+        };
+
+        print_at(stdout, start_height - 3, &border_line)?;
+        print_at(stdout, start_height - 2, SHORT_PATHS_HEADER)?;
+        print_at(stdout, start_height - 1, &border_line)?;
+
+        for (i, path) in paths.iter().enumerate() {
+            let truncated: String = path.chars().take(max_path_length).collect();
+            print_at(stdout, start_height + i as i32, &truncated)?;
+        }
+
+        // Print prompt
+        print_at(stdout, begin_height - 1, &border_line)?;
+        print_at(stdout, begin_height, SHORT_COMMAND_PROMPT)?;
+        print_at(stdout, begin_height + 1, SHORT_COMMAND_PROMPT2)?;
+        print_at(stdout, begin_height + 2, &border_line)?;
+
+        // Print command input line
+        let input_y = begin_height + 3;
+        if input_y >= 0 && input_y < max_y {
+            execute!(
+                stdout,
+                cursor::MoveTo(0, input_y as u16),
+                style::Print(&prompt_line),
+                cursor::MoveTo(0, input_y as u16),
+                style::Print(&self.command_buffer),
+                cursor::MoveTo(self.command_buffer.len() as u16, input_y as u16),
+            )?;
+        }
+
+        Ok(())
+    }
+
     fn render_info(&self, stdout: &mut io::Stdout, chrome: &Chrome) -> Result<()> {
         let total = self.match_indices.len();
         let selected_count = self
@@ -829,48 +926,29 @@ impl Controller {
                 }
             }
         } else {
-            // Bottom info bar
-            let info_y = chrome.content_height;
+            // Bottom info bar (matching Python layout: border + usage)
+            let border_y = chrome.content_height;
+            let border: String = "_".repeat(chrome.content_width as usize);
+            execute!(stdout, cursor::MoveTo(0, border_y), style::Print(&border))?;
+
+            // Command mode is rendered separately via render_command_mode
+            let usage = match self.mode {
+                Mode::QuickSelect => super::chrome::USAGE_XMODE,
+                _ => {
+                    if self.all_input {
+                        super::chrome::USAGE_HEADER_ALL_INPUT
+                    } else {
+                        super::chrome::USAGE_HEADER
+                    }
+                }
+            };
             execute!(
                 stdout,
-                cursor::MoveTo(0, info_y),
-                SetForegroundColor(Color::Cyan),
-                style::Print(format!(" [{mode_str}]{info}")),
+                cursor::MoveTo(0, border_y + 1),
+                SetForegroundColor(Color::DarkGrey),
+                style::Print(usage),
                 SetForegroundColor(Color::Reset),
             )?;
-
-            if self.mode == Mode::Command {
-                execute!(
-                    stdout,
-                    cursor::MoveTo(0, info_y + 1),
-                    style::Print(format!(" > {}", self.command_buffer)),
-                )?;
-                execute!(
-                    stdout,
-                    cursor::MoveTo(0, info_y + 2),
-                    SetForegroundColor(Color::DarkGrey),
-                    style::Print(super::chrome::USAGE_COMMAND),
-                    SetForegroundColor(Color::Reset),
-                )?;
-            } else {
-                let usage = match self.mode {
-                    Mode::QuickSelect => super::chrome::USAGE_XMODE,
-                    _ => {
-                        if self.all_input {
-                            super::chrome::USAGE_HEADER_ALL_INPUT
-                        } else {
-                            super::chrome::USAGE_HEADER
-                        }
-                    }
-                };
-                execute!(
-                    stdout,
-                    cursor::MoveTo(0, info_y + 1),
-                    SetForegroundColor(Color::DarkGrey),
-                    style::Print(usage),
-                    SetForegroundColor(Color::Reset),
-                )?;
-            }
         }
 
         Ok(())
@@ -880,6 +958,8 @@ impl Controller {
 enum Action {
     Continue,
     Quit,
+    /// Ctrl-C: silent exit (no script written, no selection saved, like Python's sys.exit(0))
+    SilentQuit,
     Execute,
 }
 

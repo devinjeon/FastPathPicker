@@ -148,10 +148,31 @@ fn compose_cd_command(line_objs: &[LineMatch]) -> String {
         } else {
             dir
         };
-        let abs = std::path::Path::new(&expanded)
-            .canonicalize()
-            .map(|p| p.to_string_lossy().to_string())
-            .unwrap_or(expanded);
+        // Python uses os.path.abspath which normalizes `.`/`..` but does NOT
+        // resolve symlinks (unlike Rust's canonicalize).
+        let abs_path = if std::path::Path::new(&expanded).is_absolute() {
+            std::path::PathBuf::from(&expanded)
+        } else {
+            std::env::current_dir()
+                .map(|cwd| cwd.join(&expanded))
+                .unwrap_or_else(|_| std::path::PathBuf::from(&expanded))
+        };
+        // Normalize `.`/`..` components without resolving symlinks
+        let mut components = Vec::new();
+        for comp in abs_path.components() {
+            match comp {
+                std::path::Component::ParentDir => {
+                    components.pop();
+                }
+                std::path::Component::CurDir => {}
+                _ => components.push(comp),
+            }
+        }
+        let abs: String = components
+            .iter()
+            .collect::<std::path::PathBuf>()
+            .to_string_lossy()
+            .to_string();
         // Python uses double quotes: echo "{path}" > ~/.dircopy
         format!("echo \"{}\" > ~/.dircopy", abs.replace('"', "\\\""))
     } else {
@@ -289,5 +310,40 @@ mod tests {
             0,
             path.len(),
         )
+    }
+
+    #[test]
+    fn test_compose_cd_command_absolute_path() {
+        let obj = make_test_line_match("/usr/local/bin/test.rs");
+        let result = compose_cd_command(&[obj]);
+        assert!(result.contains("/usr/local/bin"));
+        assert!(result.ends_with("\" > ~/.dircopy"));
+    }
+
+    #[test]
+    fn test_compose_cd_command_relative_path() {
+        let obj = make_test_line_match("src/main.rs");
+        let result = compose_cd_command(&[obj]);
+        assert!(result.starts_with("echo \""));
+        assert!(result.ends_with("\" > ~/.dircopy"));
+        // Path should be absolute after normalization
+        let path = result
+            .strip_prefix("echo \"")
+            .unwrap()
+            .strip_suffix("\" > ~/.dircopy")
+            .unwrap();
+        assert!(path.starts_with('/'), "Path should be absolute: {path}");
+    }
+
+    #[test]
+    fn test_compose_cd_command_normalizes_dotdot() {
+        let obj = make_test_line_match("/usr/local/bin/../lib/test.rs");
+        let result = compose_cd_command(&[obj]);
+        // .. should be normalized: /usr/local/bin/../lib -> /usr/local/lib
+        assert!(
+            result.contains("/usr/local/lib"),
+            "Should normalize ..: {result}"
+        );
+        assert!(!result.contains(".."), "Should not contain ..: {result}");
     }
 }
