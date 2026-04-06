@@ -59,7 +59,6 @@ pub fn save_selection(state: &SelectionState) -> Result<()> {
 }
 
 /// Load selection state from disk.
-#[allow(dead_code)]
 pub fn load_selection() -> Result<SelectionState> {
     let path = get_selection_path();
     if !path.exists() {
@@ -92,19 +91,20 @@ pub fn load_input_cache() -> Result<Vec<String>> {
 /// Clean specific state files (like Python: pickle, selection, log, script).
 /// Python cleans: .pickle, .selection.pickle, .fpp.log, .fpp.sh
 /// (does NOT clean keybindings)
-pub fn clean_state() -> Result<()> {
+pub fn clean_state() -> Result<usize> {
     let state_files = [
         get_script_output_path(),
         get_selection_path(),
         get_input_cache_path(),
         get_state_dir().join(".fpp.log"),
     ];
+    let count = state_files.len();
     for path in &state_files {
         if path.exists() {
             fs::remove_file(path)?;
         }
     }
-    Ok(())
+    Ok(count)
 }
 
 /// Write the output shell script.

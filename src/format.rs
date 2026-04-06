@@ -47,6 +47,34 @@ impl FormattedText {
         &self.raw
     }
 
+    /// Split the raw text at a visible character position, preserving ANSI codes.
+    /// Like Python's FormattedText.breakat(). Returns (before, after) with ANSI intact.
+    pub fn breakat(&self, visible_pos: usize) -> (String, String) {
+        let chars: Vec<char> = self.raw.chars().collect();
+        let mut visible = 0;
+        let mut i = 0;
+
+        while i < chars.len() && visible < visible_pos {
+            if chars[i] == '\x1b' && i + 1 < chars.len() && chars[i + 1] == '[' {
+                // Skip ANSI sequence entirely (counts as 0 visible chars)
+                i += 2;
+                while i < chars.len() && !is_ansi_terminator(chars[i]) {
+                    i += 1;
+                }
+                if i < chars.len() {
+                    i += 1; // skip terminator
+                }
+            } else {
+                visible += 1;
+                i += 1;
+            }
+        }
+
+        let before: String = chars[..i].iter().collect();
+        let after: String = chars[i..].iter().collect();
+        (before, after)
+    }
+
     /// Check if the raw text contains any ANSI escape sequences.
     pub fn has_ansi(&self) -> bool {
         self.raw.len() != self.plain.len()

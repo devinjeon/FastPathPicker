@@ -85,6 +85,10 @@ impl LineMatch {
         self.selected = !self.selected;
     }
 
+    pub fn set_select(&mut self, val: bool) {
+        self.selected = val;
+    }
+
     /// Get file description metadata for the sidebar display.
     /// Matches Python's format: local time mm/dd/YYYY, user/group names, wc -l style.
     pub fn get_file_description(&self) -> Vec<String> {

@@ -92,7 +92,7 @@ fn preprocess_args() -> Vec<String> {
 
 fn run_once(args: &Args, lines: Vec<line::Line>, match_indices: Vec<usize>) -> Result<()> {
     if match_indices.is_empty() {
-        output::output_nothing()?;
+        output::output_no_matches()?;
         return Ok(());
     }
 
@@ -181,8 +181,9 @@ fn main() -> Result<()> {
     }
 
     if args.clean {
-        state::clean_state()?;
-        // Python always exits after --clean, regardless of stdin state
+        println!("Cleaning out state files...");
+        let count = state::clean_state()?;
+        println!("Done! Removed {count} files ");
         return Ok(());
     }
 

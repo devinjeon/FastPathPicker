@@ -234,10 +234,17 @@ fn shell_escape(s: &str) -> String {
     format!("'{}'", s.replace('\'', "'\\''"))
 }
 
-/// Output "nothing to do" and exit.
+/// Output "nothing to do" and exit (used when user presses 'q').
 pub fn output_nothing() -> Result<()> {
     state::write_script("")?;
     state::append_script("echo \"nothing to do!\"; exit 1")
+}
+
+/// Output "No lines matched!" (used when no matches found, like Python's choose.py).
+pub fn output_no_matches() -> Result<()> {
+    state::write_script("")?;
+    state::append_script("echo \"No lines matched!\";")?;
+    append_exit()
 }
 
 #[cfg(test)]

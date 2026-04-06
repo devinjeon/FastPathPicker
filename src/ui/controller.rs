@@ -81,8 +81,9 @@ impl Controller {
             ctrl.toggle_select_all();
         }
 
-        // Python does NOT load previous selection on startup - only saves on exit.
-        // Removed selection loading to match Python behavior.
+        // Python loads previous selection on startup from .selection.pickle
+        // (choose.py get_line_objs -> set_selections_from_pickle).
+        ctrl.load_previous_selection();
 
         ctrl
     }
@@ -90,7 +91,7 @@ impl Controller {
     /// Run the interactive UI loop. Returns when the user makes a selection or quits.
     pub fn run(&mut self) -> Result<()> {
         if self.match_indices.is_empty() {
-            output::output_nothing()?;
+            output::output_no_matches()?;
             return Ok(());
         }
 
@@ -372,7 +373,17 @@ impl Controller {
                 }
                 Ok(Action::Continue)
             }
-            _ => Ok(Action::Continue),
+            _ => {
+                // Custom bindings fire in all modes including X_MODE (like Python)
+                if let KeyCode::Char(ch) = key.code {
+                    for binding in &self.custom_bindings {
+                        if binding.key.len() == 1 && binding.key == ch.to_string() {
+                            return self.execute_custom_binding(&binding.command.clone());
+                        }
+                    }
+                }
+                Ok(Action::Continue)
+            }
         }
     }
 
@@ -523,6 +534,19 @@ impl Controller {
         })
     }
 
+    /// Load previous selection from disk (like Python's set_selections_from_pickle).
+    fn load_previous_selection(&mut self) {
+        if let Ok(sel) = state::load_selection() {
+            for idx in sel.selected_indices {
+                if idx < self.lines.len() {
+                    if let Some(m) = self.lines[idx].as_match_mut() {
+                        m.set_select(true);
+                    }
+                }
+            }
+        }
+    }
+
     // --- Rendering ---
 
     fn render(&self, stdout: &mut io::Stdout) -> Result<()> {
@@ -601,17 +625,41 @@ impl Controller {
                 let ms = m.match_start.min(plain_len);
                 let me = m.match_end.min(plain_len);
 
-                let before: String = plain.chars().take(ms).collect();
-                let matched: String = plain.chars().skip(ms).take(me - ms).collect();
-                let after: String = plain.chars().skip(me).collect();
+                // Use ANSI-aware splitting to preserve colors in before/after
+                let (before_raw, rest_raw) = m.formatted_text.breakat(ms);
+                let (_matched_raw, after_raw) = {
+                    let rest_ft = crate::format::FormattedText::new(&rest_raw);
+                    let match_len = me - ms;
+                    rest_ft.breakat(match_len)
+                };
+
+                let before_plain: String = plain.chars().take(ms).collect();
+                let matched_plain: String = plain.chars().skip(ms).take(me - ms).collect();
+                let after_plain: String = plain.chars().skip(me).collect();
 
                 let arrow_len = if is_selected { 5 } else { 0 };
                 let max_len = text_width.saturating_sub(arrow_len);
 
-                // Print before_text (plain, no attributes)
-                let before_display = truncate_line(&before, max_len);
-                let before_printed = before_display.chars().count();
+                // Print before_text with ANSI preserved
+                let before_display = if m.formatted_text.has_ansi() {
+                    let ft = crate::format::FormattedText::new(&before_raw);
+                    ft.raw_truncated(max_len)
+                } else {
+                    truncate_line(&before_plain, max_len)
+                };
+                let before_printed = if m.formatted_text.has_ansi() {
+                    crate::format::FormattedText::new(&before_display)
+                        .plain_text()
+                        .chars()
+                        .count()
+                } else {
+                    before_display.chars().count()
+                };
                 execute!(stdout, style::Print(&before_display))?;
+                // Reset after ANSI before_text to avoid color bleeding into match
+                if m.formatted_text.has_ansi() {
+                    execute!(stdout, style::Print("\x1b[0m"))?;
+                }
 
                 // Set attributes for the match portion
                 if is_hovered && m.selected {
@@ -646,7 +694,7 @@ impl Controller {
 
                 // Print match portion with attributes
                 let remaining = max_len.saturating_sub(before_printed);
-                let match_display = truncate_line(&matched, remaining);
+                let match_display = truncate_line(&matched_plain, remaining);
                 let match_printed = match_display.chars().count();
                 execute!(stdout, style::Print(&match_display))?;
 
@@ -658,10 +706,16 @@ impl Controller {
                     SetAttribute(Attribute::Reset),
                 )?;
 
-                // Print after_text (plain, no attributes)
+                // Print after_text with ANSI preserved
                 let after_remaining = remaining.saturating_sub(match_printed);
                 if after_remaining > 0 {
-                    let after_display = truncate_line(&after, after_remaining);
+                    let after_display = if m.formatted_text.has_ansi() {
+                        let ft = crate::format::FormattedText::new(&after_raw);
+                        let result = ft.raw_truncated(after_remaining);
+                        format!("{result}\x1b[0m")
+                    } else {
+                        truncate_line(&after_plain, after_remaining)
+                    };
                     execute!(stdout, style::Print(&after_display))?;
                 }
             } else {
