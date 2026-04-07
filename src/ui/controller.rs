@@ -630,17 +630,21 @@ impl Controller {
                 execute!(stdout, style::Print(" "))?;
             }
 
-            // Quick-select label
+            // Quick-select labels: Python renders at x=1 (fixed position)
             if in_xmode {
                 if let Some(label) = quick_select::get_label(row) {
                     execute!(
                         stdout,
-                        SetForegroundColor(Color::Yellow),
-                        style::Print(format!("{label} ")),
-                        SetForegroundColor(Color::Reset),
+                        cursor::MoveTo(1, row as u16),
+                        style::Print(format!("{label}")),
                     )?;
-                } else {
-                    execute!(stdout, style::Print("  "))?;
+                    // Move cursor to content start
+                    let content_x = chrome.content_start_x(has_scrollbar, in_xmode);
+                    execute!(stdout, cursor::MoveTo(content_x, row as u16))?;
+                } else if !has_scrollbar {
+                    // Only need spacing when scrollbar isn't already providing it
+                    let content_x = chrome.content_start_x(has_scrollbar, in_xmode);
+                    execute!(stdout, cursor::MoveTo(content_x, row as u16))?;
                 }
             }
 
@@ -766,10 +770,15 @@ impl Controller {
         Ok(())
     }
 
-    fn render_preset_warning(&self, stdout: &mut io::Stdout, _chrome: &Chrome) -> Result<()> {
-        let (_, height) = terminal::size()?;
-        let y_start = height.saturating_sub(4) / 2;
-        let x_start = 2u16;
+    fn render_preset_warning(&self, stdout: &mut io::Stdout, chrome: &Chrome) -> Result<()> {
+        // Python: (min_x, min_y, _, max_y) = get_chrome_boundaries()
+        // max_y accounts for narrow info bar (height - 4 in narrow mode)
+        let max_y = chrome.content_height;
+        let min_y = 0u16;
+        let y_start = (max_y + min_y) / 2 - 3;
+        let has_scrollbar =
+            ScrollBar::new(self.lines.len(), chrome.content_height as usize).is_active();
+        let x_start = if has_scrollbar { 5u16 } else { 0u16 };
 
         execute!(
             stdout,
@@ -810,10 +819,9 @@ impl Controller {
             .collect();
         let max_y = height as i32;
 
-        // Python: begin_height = round(max_y / 2) - len(paths) / 2.0
-        // If begin_height <= 1, use max_y - 6
-        let mut begin_height =
-            ((max_y as f64 / 2.0).round() as i32) - (paths.len() as f64 / 2.0) as i32;
+        // Python: begin_height = int(round(max_y / 2) - len(paths) / 2.0)
+        // Use float subtraction before converting to int (matching Python exactly)
+        let mut begin_height = ((max_y as f64 / 2.0).round() - (paths.len() as f64 / 2.0)) as i32;
         if begin_height <= 1 {
             begin_height = max_y - 6;
         }
@@ -867,38 +875,34 @@ impl Controller {
     }
 
     fn render_info(&self, stdout: &mut io::Stdout, chrome: &Chrome) -> Result<()> {
-        let total = self.match_indices.len();
-        let selected_count = self
-            .match_indices
-            .iter()
-            .filter(|&&idx| self.lines[idx].as_match().is_some_and(|m| m.selected))
-            .count();
-
-        let info = format!(
-            " {}/{} files | {} selected",
-            self.hover_index + 1,
-            total,
-            selected_count,
-        );
-
-        let mode_str = match self.mode {
-            Mode::Normal => "NORMAL",
-            Mode::Command => "COMMAND",
-            Mode::QuickSelect => "X-MODE",
-            Mode::Warning => "NORMAL",
-        };
+        let (_, height) = terminal::size().unwrap_or((80, 24));
 
         if chrome.is_wide {
-            // Sidebar rendering
-            let sidebar_x = chrome.content_width;
-            execute!(
-                stdout,
-                cursor::MoveTo(sidebar_x, 0),
-                SetForegroundColor(Color::Cyan),
-                style::Print(format!(" [{mode_str}]")),
-                SetForegroundColor(Color::Reset),
-            )?;
-            execute!(stdout, cursor::MoveTo(sidebar_x, 1), style::Print(&info),)?;
+            let border_x = chrome.content_width;
+
+            // Draw vertical border '|' (matching Python's HelperChrome)
+            for row in 0..height {
+                execute!(stdout, cursor::MoveTo(border_x, row), style::Print("|"),)?;
+            }
+
+            // Sidebar: show USAGE_PAGE or USAGE_COMMAND_PAGE (matching Python)
+            let sidebar_text = if self.mode == Mode::Command {
+                super::chrome::USAGE_COMMAND_PAGE
+            } else {
+                super::chrome::USAGE_PAGE
+            };
+
+            let max_w = chrome.sidebar_width as usize - 2;
+            for (i, line) in sidebar_text.lines().enumerate() {
+                if (i as u16) < height {
+                    let truncated: String = line.chars().take(max_w).collect();
+                    execute!(
+                        stdout,
+                        cursor::MoveTo(border_x + 1, i as u16),
+                        style::Print(&truncated),
+                    )?;
+                }
+            }
 
             // Show file description when toggled with 'd'
             if self.show_description {
@@ -906,11 +910,12 @@ impl Controller {
                     if let Some(m) = self.lines[idx].as_match() {
                         let desc = m.get_file_description();
                         let header = format!("Description for {}:", m.path);
-                        let max_w = chrome.sidebar_width as usize - 2;
                         let truncated_header: String = header.chars().take(max_w).collect();
+                        // Clear sidebar area and show description
+                        let desc_start = sidebar_text.lines().count() as u16 + 1;
                         execute!(
                             stdout,
-                            cursor::MoveTo(sidebar_x, 3),
+                            cursor::MoveTo(border_x + 1, desc_start),
                             style::Print(format!(" {truncated_header}")),
                         )?;
                         for (i, line) in desc.iter().enumerate() {
@@ -918,7 +923,7 @@ impl Controller {
                                 line.chars().take(max_w.saturating_sub(6)).collect();
                             execute!(
                                 stdout,
-                                cursor::MoveTo(sidebar_x, (i + 5) as u16),
+                                cursor::MoveTo(border_x + 1, desc_start + 2 + i as u16),
                                 style::Print(format!("     * {truncated}")),
                             )?;
                         }
@@ -926,13 +931,23 @@ impl Controller {
                 }
             }
         } else {
-            // Bottom info bar (matching Python layout: border + usage)
-            let border_y = chrome.content_height;
-            let border: String = "_".repeat(chrome.content_width as usize);
-            execute!(stdout, cursor::MoveTo(0, border_y), style::Print(&border))?;
+            // Narrow mode bottom info bar
+            // Python: border and usage start at get_min_x() which is CHROME_MIN_X (5) when scrollbar active
+            let has_scrollbar =
+                ScrollBar::new(self.lines.len(), chrome.content_height as usize).is_active();
+            let min_x = if has_scrollbar { 5u16 } else { 0u16 };
 
-            // Command mode is rendered separately via render_command_mode
+            let border_y = chrome.content_height;
+            let border_width = (chrome.content_width as usize).saturating_sub(min_x as usize);
+            let border: String = "_".repeat(border_width);
+            execute!(
+                stdout,
+                cursor::MoveTo(min_x, border_y),
+                style::Print(&border),
+            )?;
+
             let usage = match self.mode {
+                Mode::Command => super::chrome::USAGE_COMMAND,
                 Mode::QuickSelect => super::chrome::USAGE_XMODE,
                 _ => {
                     if self.all_input {
@@ -944,7 +959,7 @@ impl Controller {
             };
             execute!(
                 stdout,
-                cursor::MoveTo(0, border_y + 1),
+                cursor::MoveTo(min_x, border_y + 1),
                 SetForegroundColor(Color::DarkGrey),
                 style::Print(usage),
                 SetForegroundColor(Color::Reset),
