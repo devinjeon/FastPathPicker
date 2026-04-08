@@ -1,0 +1,10 @@
+
+
+if type shopt > /dev/null; then
+  shopt -s expand_aliases
+fi
+
+echo "executing command:"
+echo "echo './old_name.rs' '/Users/devin/workspace/fast-path-picker/src/lib.rs'"
+echo './old_name.rs' '/Users/devin/workspace/fast-path-picker/src/lib.rs'
+exit $?;

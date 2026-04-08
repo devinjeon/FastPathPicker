@@ -1,0 +1,10 @@
+
+
+if type shopt > /dev/null; then
+  shopt -s expand_aliases
+fi
+
+echo "executing command:"
+echo "echo '/Users/devin/workspace/fast-path-picker/src/__tests__/screenTestRunner.py' './.5c71551' '/Users/devin/workspace/fast-path-picker/src/__tests__/screenTestRunner.py' '/Users/devin/workspace/fast-path-picker/src/__tests__/screenTestRunner.py' './.exit-ing'"
+echo '/Users/devin/workspace/fast-path-picker/src/__tests__/screenTestRunner.py' './.5c71551' '/Users/devin/workspace/fast-path-picker/src/__tests__/screenTestRunner.py' '/Users/devin/workspace/fast-path-picker/src/__tests__/screenTestRunner.py' './.exit-ing'
+exit $?;

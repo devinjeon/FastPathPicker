@@ -1,4 +1,4 @@
-.PHONY: all build dev test test-unit test-integ lint fmt clean install qa
+.PHONY: all build dev test test-unit test-integ test-e2e bench-e2e lint fmt clean install qa
 
 export PATH := $(HOME)/.cargo/bin:$(PATH)
 CARGO := cargo
@@ -14,13 +14,28 @@ build:
 dev:
 	$(CARGO) build
 
-test: test-unit test-integ
+test: test-unit test-integ test-e2e
 
 test-unit:
 	$(CARGO) test --bins
 
 test-integ:
 	$(CARGO) test --test '*'
+
+test-e2e: build
+	@bash tests/e2e/run_e2e.sh
+
+test-e2e-rust: build
+	@bash tests/e2e/run_e2e.sh --rust-only
+
+test-e2e-update: build
+	@bash tests/e2e/run_e2e.sh --update-snapshots
+
+bench-e2e: build
+	@bash tests/e2e/bench_e2e.sh
+
+bench-e2e-rust: build
+	@bash tests/e2e/bench_e2e.sh --rust-only
 
 lint:
 	$(CARGO) fmt -- --check

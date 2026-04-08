@@ -1,0 +1,10 @@
+
+
+if type shopt > /dev/null; then
+  shopt -s expand_aliases
+fi
+
+echo "executing command:"
+echo "echo '/usr/local/bin/test.sh' '/home/user/project/main.rs'"
+echo '/usr/local/bin/test.sh' '/home/user/project/main.rs'
+exit $?;

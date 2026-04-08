@@ -1,0 +1,20 @@
+
+
+if type shopt > /dev/null; then
+  shopt -s expand_aliases
+fi
+
+printf "[0;31m
+Warning! Some invalid or unresolvable files were detected.
+[0m\n"
+printf "[0;31m
+It looks like one of these is a git abbreviated file with
+a triple dot path (.../). Try to turn off git's abbreviation
+with --numstat so we get actual paths (not abbreviated
+versions which cannot be resolved.
+[0m\n"
+read -p "Are you sure you want to continue? Ctrl-C to quit" -r
+echo "executing command:"
+echo "echo '.../fpp' '.../src/__tests__/__init__.py' '.../src/__tests__/cursesForTest.py'"
+echo '.../fpp' '.../src/__tests__/__init__.py' '.../src/__tests__/cursesForTest.py'
+exit $?;
