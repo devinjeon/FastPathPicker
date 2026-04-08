@@ -1,0 +1,10 @@
+
+
+if type shopt > /dev/null; then
+  shopt -s expand_aliases
+fi
+
+echo "executing command:"
+echo "echo 'CONTAINER ID   IMAGE          STATUS' 'abc123def456   nginx:latest   Up 2 hours' 'def789ghi012   redis:7        Up 3 hours'"
+echo 'CONTAINER ID   IMAGE          STATUS' 'abc123def456   nginx:latest   Up 2 hours' 'def789ghi012   redis:7        Up 3 hours'
+exit $?;

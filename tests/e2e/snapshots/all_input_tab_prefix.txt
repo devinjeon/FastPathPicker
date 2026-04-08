@@ -1,0 +1,10 @@
+
+
+if type shopt > /dev/null; then
+  shopt -s expand_aliases
+fi
+
+echo "executing command:"
+echo "echo 'modified:   Classes/Media/YPMediaLibraryViewController.m'"
+echo 'modified:   Classes/Media/YPMediaLibraryViewController.m'
+exit $?;

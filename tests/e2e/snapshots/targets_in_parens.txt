@@ -1,0 +1,10 @@
+
+
+if type shopt > /dev/null; then
+  shopt -s expand_aliases
+fi
+
+echo "executing command:"
+echo "echo '/Users/devin/fbcode/search/places/scorer/PageScorer.cpp'"
+echo '/Users/devin/fbcode/search/places/scorer/PageScorer.cpp'
+exit $?;

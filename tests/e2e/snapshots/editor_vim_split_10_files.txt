@@ -1,0 +1,3 @@
+
+vim  +1 /Users/devin/workspace/fast-path-picker/src/file1.rs +"vsp +2 /Users/devin/workspace/fast-path-picker/src/file2.rs" +"vsp +3 /Users/devin/workspace/fast-path-picker/src/file3.rs" +"vsp +4 /Users/devin/workspace/fast-path-picker/src/file4.rs" +"vsp +5 /Users/devin/workspace/fast-path-picker/src/file5.rs" +"vsp +6 /Users/devin/workspace/fast-path-picker/src/file6.rs" +"vsp +7 /Users/devin/workspace/fast-path-picker/src/file7.rs" +"vsp +8 /Users/devin/workspace/fast-path-picker/src/file8.rs" +"vsp +9 /Users/devin/workspace/fast-path-picker/src/file9.rs" +"vsp +10 /Users/devin/workspace/fast-path-picker/src/file10.rs"
+exit $?;

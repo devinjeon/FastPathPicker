@@ -1,0 +1,10 @@
+
+
+if type shopt > /dev/null; then
+  shopt -s expand_aliases
+fi
+
+echo "executing command:"
+echo "echo 'docs/설계문서.md' 'src/テスト.rs'"
+echo 'docs/설계문서.md' 'src/テスト.rs'
+exit $?;

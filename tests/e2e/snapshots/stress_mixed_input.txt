@@ -1,0 +1,10 @@
+
+
+if type shopt > /dev/null; then
+  shopt -s expand_aliases
+fi
+
+echo "executing command:"
+echo "echo '/Users/devin/workspace/fast-path-picker/src/file20.rs' '/Users/devin/workspace/fast-path-picker/src/file40.rs' '/Users/devin/workspace/fast-path-picker/src/file60.rs' '/Users/devin/workspace/fast-path-picker/src/file80.rs' '/Users/devin/workspace/fast-path-picker/src/file100.rs'"
+echo '/Users/devin/workspace/fast-path-picker/src/file20.rs' '/Users/devin/workspace/fast-path-picker/src/file40.rs' '/Users/devin/workspace/fast-path-picker/src/file60.rs' '/Users/devin/workspace/fast-path-picker/src/file80.rs' '/Users/devin/workspace/fast-path-picker/src/file100.rs'
+exit $?;

@@ -1,0 +1,10 @@
+
+
+if type shopt > /dev/null; then
+  shopt -s expand_aliases
+fi
+
+echo "executing command:"
+echo "echo 'src/main.rs:42' '~/foo/bar.py' 'random text line'"
+echo 'src/main.rs:42' '~/foo/bar.py' 'random text line'
+exit $?;

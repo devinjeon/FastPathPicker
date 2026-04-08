@@ -1,0 +1,10 @@
+
+
+if type shopt > /dev/null; then
+  shopt -s expand_aliases
+fi
+
+echo "executing command:"
+echo "grep \"pattern\" '/Users/devin/workspace/fast-path-picker/src/main.rs'"
+grep "pattern" '/Users/devin/workspace/fast-path-picker/src/main.rs'
+exit $?;

@@ -1,0 +1,3 @@
+
+subl  '/Users/devin/www/js/hotness.js:42'
+exit $?;

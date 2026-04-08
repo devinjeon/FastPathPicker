@@ -1,0 +1,3 @@
+
+vim  +42 ./s_a_file.txt
+exit $?;

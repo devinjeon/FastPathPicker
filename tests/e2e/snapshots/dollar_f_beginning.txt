@@ -1,0 +1,10 @@
+
+
+if type shopt > /dev/null; then
+  shopt -s expand_aliases
+fi
+
+echo "executing command:"
+echo "'./file1.txt' './file2.txt' | wc -l"
+'./file1.txt' './file2.txt' | wc -l
+exit $?;

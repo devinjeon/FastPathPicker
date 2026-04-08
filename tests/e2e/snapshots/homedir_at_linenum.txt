@@ -1,0 +1,10 @@
+
+
+if type shopt > /dev/null; then
+  shopt -s expand_aliases
+fi
+
+echo "executing command:"
+echo "echo '/Users/devin/assets/retina/victory@2x.png'"
+echo '/Users/devin/assets/retina/victory@2x.png'
+exit $?;

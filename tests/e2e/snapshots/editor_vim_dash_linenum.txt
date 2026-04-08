@@ -1,0 +1,3 @@
+
+vim  +22 /Users/devin/workspace/fast-path-picker/flib/asd/ent/berkeley/two.py
+exit $?;

@@ -1,0 +1,10 @@
+
+
+if type shopt > /dev/null; then
+  shopt -s expand_aliases
+fi
+
+echo "executing command:"
+echo "echo './So.many.periods.txt~'"
+echo './So.many.periods.txt~'
+exit $?;

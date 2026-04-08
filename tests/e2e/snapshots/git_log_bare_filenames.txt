@@ -1,0 +1,10 @@
+
+
+if type shopt > /dev/null; then
+  shopt -s expand_aliases
+fi
+
+echo "executing command:"
+echo "echo '/Users/devin/workspace/fast-path-picker/pkg/server.go' '/Users/devin/workspace/fast-path-picker/pkg/handler.go' '/Users/devin/workspace/fast-path-picker/pkg/router.go'"
+echo '/Users/devin/workspace/fast-path-picker/pkg/server.go' '/Users/devin/workspace/fast-path-picker/pkg/handler.go' '/Users/devin/workspace/fast-path-picker/pkg/router.go'
+exit $?;

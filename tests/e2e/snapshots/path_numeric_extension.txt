@@ -1,0 +1,10 @@
+
+
+if type shopt > /dev/null; then
+  shopt -s expand_aliases
+fi
+
+echo "executing command:"
+echo "echo '/html/js/hotness.js42'"
+echo '/html/js/hotness.js42'
+exit $?;

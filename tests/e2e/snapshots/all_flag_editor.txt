@@ -1,0 +1,3 @@
+
+nano  +10 '/Users/devin/workspace/fast-path-picker/src/main.rs' +20 '/Users/devin/workspace/fast-path-picker/src/parse.rs'
+exit $?;

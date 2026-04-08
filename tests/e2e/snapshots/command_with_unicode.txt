@@ -1,0 +1,10 @@
+
+
+if type shopt > /dev/null; then
+  shopt -s expand_aliases
+fi
+
+echo "executing command:"
+echo "echo 한글 '/Users/devin/workspace/fast-path-picker/src/main.rs'"
+echo 한글 '/Users/devin/workspace/fast-path-picker/src/main.rs'
+exit $?;

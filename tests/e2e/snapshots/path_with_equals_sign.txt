@@ -1,0 +1,10 @@
+
+
+if type shopt > /dev/null; then
+  shopt -s expand_aliases
+fi
+
+echo "executing command:"
+echo "echo '/etc/app/config.yaml' './test.rs'"
+echo '/etc/app/config.yaml' './test.rs'
+exit $?;

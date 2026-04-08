@@ -1,0 +1,3 @@
+
+vim  +999999 /Users/devin/workspace/fast-path-picker/src/main.rs
+exit $?;

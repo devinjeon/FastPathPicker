@@ -1,0 +1,3 @@
+
+subl  './s_a_file.txt:42'
+exit $?;

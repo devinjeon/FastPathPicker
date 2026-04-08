@@ -1,0 +1,10 @@
+
+
+if type shopt > /dev/null; then
+  shopt -s expand_aliases
+fi
+
+echo "executing command:"
+echo "echo './s_a_test.txt' './file2.txt' && ls './s_a_test.txt' './file2.txt'"
+echo './s_a_test.txt' './file2.txt' && ls './s_a_test.txt' './file2.txt'
+exit $?;
