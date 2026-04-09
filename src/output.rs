@@ -111,10 +111,13 @@ fn join_files_into_command(files_and_nums: &[(&str, u64)]) -> String {
 }
 
 fn get_editor_and_path() -> (String, String) {
+    // Python uses `os.environ.get("FPP_EDITOR") or ...` where empty string is falsy,
+    // so we must filter out empty strings to match Python behavior.
     if let Some(editor_path) = env::var("FPP_EDITOR")
         .ok()
-        .or_else(|| env::var("VISUAL").ok())
-        .or_else(|| env::var("EDITOR").ok())
+        .filter(|s| !s.is_empty())
+        .or_else(|| env::var("VISUAL").ok().filter(|s| !s.is_empty()))
+        .or_else(|| env::var("EDITOR").ok().filter(|s| !s.is_empty()))
     {
         let editor = std::path::Path::new(&editor_path)
             .file_name()
