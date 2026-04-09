@@ -322,4 +322,30 @@ mod tests {
         assert_eq!(plain.plain_text().chars().count(), 15);
         assert!(plain.plain_text().contains("|...|"));
     }
+
+    #[test]
+    fn test_raw_truncated_with_decorator_short_text() {
+        // Line 126: text fits within max_visible, returns raw unchanged
+        let ft = FormattedText::new("short");
+        let result = ft.raw_truncated_with_decorator(20);
+        assert_eq!(result, "short");
+    }
+
+    #[test]
+    fn test_raw_truncated_with_decorator_tiny_max() {
+        // Line 132: max_visible too small for decorator, falls back to raw_truncated
+        let ft = FormattedText::new("abcdefghijklmnopqrstuvwxyz");
+        let result = ft.raw_truncated_with_decorator(5);
+        let plain = FormattedText::new(&result);
+        assert_eq!(plain.plain_text().chars().count(), 5);
+        assert!(!plain.plain_text().contains("|...|"));
+    }
+
+    #[test]
+    fn test_raw_take_back_large_n() {
+        // Line 182: n >= total_visible, returns raw unchanged
+        let ft = FormattedText::new("\x1b[31mhello\x1b[0m");
+        let result = ft.raw_take_back(100);
+        assert_eq!(result, "\x1b[31mhello\x1b[0m");
+    }
 }

@@ -242,7 +242,12 @@ fn append_error(text: &str) -> Result<()> {
 }
 
 fn append_exit() -> Result<()> {
-    let shell = env::var("SHELL").unwrap_or_default();
+    // Python: os.environ["SHELL"] raises KeyError when SHELL is unset,
+    // so append_exit() silently fails and no exit line is written.
+    let shell = match env::var("SHELL") {
+        Ok(s) => s,
+        Err(_) => return Ok(()),
+    };
     let exit_status = if shell.ends_with("csh") || shell.ends_with("fish") || shell.ends_with("rc")
     {
         "$status"
@@ -348,5 +353,80 @@ mod tests {
             "Should normalize ..: {result}"
         );
         assert!(!result.contains(".."), "Should not contain ..: {result}");
+    }
+
+    #[test]
+    fn test_compose_cd_command_empty() {
+        // Line 182: empty line_objs returns empty string
+        let result = compose_cd_command(&[]);
+        assert_eq!(result, "");
+    }
+
+    #[test]
+    fn test_shell_escape_single_quote() {
+        // Line 263: single quote in path
+        let result = shell_escape("can't stop");
+        assert_eq!(result, "'can'\\''t stop'");
+    }
+
+    // Mutex to prevent parallel test interference with env vars.
+    use std::sync::Mutex;
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    #[test]
+    fn test_output_nothing() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        let tmp = tempfile::tempdir().unwrap();
+        env::set_var("FPP_DIR", tmp.path().to_str().unwrap());
+
+        output_nothing().unwrap();
+        let script = std::fs::read_to_string(tmp.path().join(".fpp.sh")).unwrap();
+        assert!(script.contains("nothing to do!"));
+
+        env::remove_var("FPP_DIR");
+    }
+
+    #[test]
+    fn test_output_no_matches() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        let tmp = tempfile::tempdir().unwrap();
+        env::set_var("FPP_DIR", tmp.path().to_str().unwrap());
+        env::set_var("SHELL", "/bin/bash");
+
+        output_no_matches().unwrap();
+        let script = std::fs::read_to_string(tmp.path().join(".fpp.sh")).unwrap();
+        assert!(script.contains("No lines matched!"));
+
+        env::remove_var("FPP_DIR");
+        env::remove_var("SHELL");
+    }
+
+    #[test]
+    fn test_join_files_editor_with_linenum_sep() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        env::set_var("FPP_EDITOR", "code");
+        env::set_var("FPP_LINENUM_SEP", ":");
+        let result = join_files_into_command(&[("src/main.rs", 42)]);
+        assert!(result.contains("'src/main.rs:42'"), "Got: {result}");
+        env::remove_var("FPP_EDITOR");
+        env::remove_var("FPP_LINENUM_SEP");
+    }
+
+    #[test]
+    fn test_join_files_editor_base_name_extraction() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        env::set_var("FPP_EDITOR", "emacs -nw");
+        let result = join_files_into_command(&[("src/main.rs", 10)]);
+        assert!(result.contains("+10"), "Got: {result}");
+        env::remove_var("FPP_EDITOR");
+    }
+
+    #[test]
+    fn test_join_files_zero_linenum() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        env::set_var("FPP_EDITOR", "nano");
+        let result = join_files_into_command(&[("src/main.rs", 0)]);
+        assert!(!result.contains("+0"), "Should not have +0: {result}");
+        env::remove_var("FPP_EDITOR");
     }
 }

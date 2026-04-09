@@ -700,21 +700,47 @@ mod tests {
 
     #[test]
     fn test_prepend_dir_cases() {
-        // "home/absolute/path.py" -> "/home/absolute/path.py"
+        let home = dirs::home_dir().unwrap();
+        let home_str = home.to_string_lossy();
+        let prepend = &*PREPEND_PATH;
+
+        // 1. "home/absolute/path.py" -> "/home/absolute/path.py"
         assert_eq!(
             prepend_dir("home/absolute/path.py", false),
             "/home/absolute/path.py",
         );
 
-        // "~/www/asd.py" -> expands ~ to home dir
-        let home = dirs::home_dir().unwrap();
-        let home_str = home.to_string_lossy();
+        // 2. "~/www/asd.py" -> expands ~ to home dir
         assert_eq!(
             prepend_dir("~/www/asd.py", false),
             format!("{}/www/asd.py", home_str),
         );
 
-        // empty string
+        // 3. "www/asd.py" -> expands to ~/www/asd.py (repos match)
+        assert_eq!(
+            prepend_dir("www/asd.py", false),
+            format!("{}/www/asd.py", home_str),
+        );
+
+        // 4. "foo/bar/baz/asd.py" -> PREPEND_PATH + "foo/bar/baz/asd.py"
+        assert_eq!(
+            prepend_dir("foo/bar/baz/asd.py", false),
+            format!("{}foo/bar/baz/asd.py", prepend),
+        );
+
+        // 5. "a/foo/bar/baz/asd.py" -> PREPEND_PATH + "foo/bar/baz/asd.py"
+        assert_eq!(
+            prepend_dir("a/foo/bar/baz/asd.py", false),
+            format!("{}foo/bar/baz/asd.py", prepend),
+        );
+
+        // 6. "b/foo/bar/baz/asd.py" -> PREPEND_PATH + "foo/bar/baz/asd.py"
+        assert_eq!(
+            prepend_dir("b/foo/bar/baz/asd.py", false),
+            format!("{}foo/bar/baz/asd.py", prepend),
+        );
+
+        // 7. empty string
         assert_eq!(prepend_dir("", false), "");
     }
 
@@ -834,6 +860,10 @@ mod tests {
 
     // ── validate_file_exists tests ───────────────────────────────────
 
+    // Shared mutex to prevent parallel test interference with set_current_dir.
+    use std::sync::Mutex;
+    static DIR_LOCK: Mutex<()> = Mutex::new(());
+
     struct FileExistsTestCase {
         input: &'static str,
         should_match: bool,
@@ -851,9 +881,6 @@ mod tests {
         }
 
         // Change to tests/ directory so relative ./inputs/ paths resolve.
-        // Uses a mutex to prevent parallel test interference with set_current_dir.
-        use std::sync::Mutex;
-        static DIR_LOCK: Mutex<()> = Mutex::new(());
         let _guard = DIR_LOCK.lock().unwrap();
         let original_dir = std::env::current_dir().unwrap();
         std::env::set_current_dir(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests"))
@@ -1009,34 +1036,84 @@ mod tests {
         std::env::set_current_dir(original_dir).unwrap();
     }
 
-    // ── prepend_dir additional cases ─────────────────────────────────
-
+    /// Tests that require working_dir="inputs" (chdir into inputs/ before matching).
+    /// Ported from Python's FILE_TEST_CASES with working_dir parameter.
     #[test]
-    fn test_prepend_dir_git_diff_prefix() {
-        let result_a = prepend_dir("a/foo/bar.py", false);
-        assert!(
-            result_a.ends_with("foo/bar.py"),
-            "a/ prefix not stripped: {}",
-            result_a
-        );
-        assert!(
-            !result_a.contains("a/foo"),
-            "a/ should be removed: {}",
-            result_a
-        );
+    fn test_validate_file_exists_with_working_dir() {
+        let inputs_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/inputs");
+        if !inputs_dir.exists() {
+            eprintln!("Skipping working_dir tests: tests/inputs/ not found");
+            return;
+        }
 
-        let result_b = prepend_dir("b/foo/bar.py", false);
-        assert!(
-            result_b.ends_with("foo/bar.py"),
-            "b/ prefix not stripped: {}",
-            result_b
+        let _guard = DIR_LOCK.lock().unwrap();
+        let original_dir = std::env::current_dir().unwrap();
+        std::env::set_current_dir(&inputs_dir).unwrap();
+
+        // Python: evilFile No Prepend.txt, working_dir="inputs", validate=True, no_fuzz
+        let result = match_line("evilFile No Prepend.txt", true, false);
+        let r = result.expect("'evilFile No Prepend.txt' should match with validate_file_exists");
+        assert_eq!(r.path, "evilFile No Prepend.txt");
+        assert_eq!(r.line_num, 0);
+
+        // Python: file-from-yocto_%.bbappend, working_dir="inputs", validate=True
+        let result = match_line("file-from-yocto_%.bbappend", true, false);
+        let r =
+            result.expect("'file-from-yocto_%.bbappend' should match with validate_file_exists");
+        assert_eq!(r.path, "file-from-yocto_%.bbappend");
+        assert_eq!(r.line_num, 0);
+
+        // Python: "other thing ./foo/file-from-yocto_3.1%.bbappend", working_dir="inputs", validate=True
+        // The expected match is "file-from-yocto_3.1%.bbappend" (just the basename)
+        let result = match_line(
+            "other thing ./foo/file-from-yocto_3.1%.bbappend",
+            true,
+            false,
         );
-        assert!(
-            !result_b.contains("b/foo"),
-            "b/ should be removed: {}",
-            result_b
-        );
+        let r = result.expect("'other thing ./foo/file-from-yocto_3.1%.bbappend' should match");
+        assert_eq!(r.path, "file-from-yocto_3.1%.bbappend");
+        assert_eq!(r.line_num, 0);
+
+        // Python: "./file-from-yocto_3.1%.bbappend", working_dir="inputs", validate=True
+        let result = match_line("./file-from-yocto_3.1%.bbappend", true, false);
+        let r = result.expect("'./file-from-yocto_3.1%.bbappend' should match");
+        assert_eq!(r.path, "./file-from-yocto_3.1%.bbappend");
+        assert_eq!(r.line_num, 0);
+
+        std::env::set_current_dir(original_dir).unwrap();
     }
+
+    /// Python: "inputs/annoying-hyphen-dir/Package Control.system-bundle"
+    /// with validate_file_exists=True, disable_fuzz_test=True, no prepend.
+    #[test]
+    fn test_validate_file_exists_no_prepend() {
+        let test_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests");
+        if !test_dir.exists() {
+            eprintln!("Skipping no-prepend test: tests/ not found");
+            return;
+        }
+
+        let _guard = DIR_LOCK.lock().unwrap();
+        let original_dir = std::env::current_dir().unwrap();
+        std::env::set_current_dir(&test_dir).unwrap();
+
+        let result = match_line(
+            "inputs/annoying-hyphen-dir/Package Control.system-bundle",
+            true,
+            false,
+        );
+        let r = result
+            .expect("'inputs/annoying-hyphen-dir/Package Control.system-bundle' should match");
+        assert_eq!(
+            r.path,
+            "inputs/annoying-hyphen-dir/Package Control.system-bundle"
+        );
+        assert_eq!(r.line_num, 0);
+
+        std::env::set_current_dir(original_dir).unwrap();
+    }
+
+    // ── prepend_dir additional cases ─────────────────────────────────
 
     #[test]
     fn test_prepend_dir_no_slash() {

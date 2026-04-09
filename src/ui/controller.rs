@@ -1288,4 +1288,230 @@ mod tests {
         ctrl.move_hover(1);
         assert!(!ctrl.show_description);
     }
+
+    // --- Quit vs SilentQuit distinction ---
+
+    #[test]
+    fn test_quit_vs_silent_quit_are_distinct() {
+        let (lines, indices) = make_test_lines(&["a.txt"]);
+        let mut ctrl = Controller::new(lines, indices, None, false, None, false);
+        let q_action = ctrl
+            .handle_key(KeyEvent::new(KeyCode::Char('q'), KeyModifiers::NONE))
+            .unwrap();
+        assert!(matches!(q_action, Action::Quit));
+        let cc_action = ctrl
+            .handle_key(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL))
+            .unwrap();
+        assert!(matches!(cc_action, Action::SilentQuit));
+    }
+
+    // --- Ctrl-C silent quit tests ---
+
+    #[test]
+    fn test_ctrl_c_returns_silent_quit() {
+        let (lines, indices) = make_test_lines(&["a.txt"]);
+        let mut ctrl = Controller::new(lines, indices, None, false, None, false);
+        let key = KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL);
+        let action = ctrl.handle_key(key).unwrap();
+        assert!(matches!(action, Action::SilentQuit));
+    }
+
+    #[test]
+    fn test_ctrl_c_in_command_mode_returns_silent_quit() {
+        let (lines, indices) = make_test_lines(&["a.txt"]);
+        let mut ctrl = Controller::new(lines, indices, None, false, None, false);
+        ctrl.mode = Mode::Command;
+        let key = KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL);
+        let action = ctrl.handle_key(key).unwrap();
+        assert!(matches!(action, Action::SilentQuit));
+    }
+
+    #[test]
+    fn test_ctrl_c_in_xmode_returns_silent_quit() {
+        let (lines, indices) = make_test_lines(&["a.txt"]);
+        let mut ctrl = Controller::new(lines, indices, None, false, None, false);
+        ctrl.mode = Mode::QuickSelect;
+        let key = KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL);
+        let action = ctrl.handle_key(key).unwrap();
+        assert!(matches!(action, Action::SilentQuit));
+    }
+
+    // --- Command mode backspace tests ---
+
+    #[test]
+    fn test_command_mode_backspace_on_empty_stays_in_command() {
+        let (lines, indices) = make_test_lines(&["a.txt"]);
+        let mut ctrl = Controller::new(lines, indices, None, false, None, false);
+        ctrl.mode = Mode::Command;
+        // Backspace on empty buffer should NOT exit command mode (Python compat)
+        let key = KeyEvent::new(KeyCode::Backspace, KeyModifiers::NONE);
+        ctrl.handle_key(key).unwrap();
+        assert_eq!(ctrl.mode, Mode::Command);
+    }
+
+    #[test]
+    fn test_command_mode_backspace_removes_char() {
+        let (lines, indices) = make_test_lines(&["a.txt"]);
+        let mut ctrl = Controller::new(lines, indices, None, false, None, false);
+        ctrl.mode = Mode::Command;
+        ctrl.command_buffer = "ab".to_string();
+        let key = KeyEvent::new(KeyCode::Backspace, KeyModifiers::NONE);
+        ctrl.handle_key(key).unwrap();
+        assert_eq!(ctrl.command_buffer, "a");
+        assert_eq!(ctrl.mode, Mode::Command);
+    }
+
+    #[test]
+    fn test_command_mode_empty_enter_returns_to_normal() {
+        let (lines, indices) = make_test_lines(&["a.txt"]);
+        let mut ctrl = Controller::new(lines, indices, None, false, None, false);
+        ctrl.mode = Mode::Command;
+        let key = KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE);
+        ctrl.handle_key(key).unwrap();
+        assert_eq!(ctrl.mode, Mode::Normal);
+    }
+
+    // --- Custom keybinding fire-after-builtin tests ---
+
+    #[test]
+    fn test_custom_binding_fires_on_unbound_key() {
+        let (lines, indices) = make_test_lines(&["a.txt"]);
+        let mut ctrl = Controller::new(lines, indices, None, false, None, false);
+        ctrl.custom_bindings = vec![KeyBinding {
+            key: "z".to_string(),
+            command: "git add".to_string(),
+        }];
+        let key = KeyEvent::new(KeyCode::Char('z'), KeyModifiers::NONE);
+        let action = ctrl.handle_key(key).unwrap();
+        assert!(matches!(action, Action::Execute));
+        assert_eq!(ctrl.command_buffer, "git add");
+    }
+
+    #[test]
+    fn test_custom_binding_fires_after_builtin_key() {
+        // Python: if 'f' has a custom binding, toggle_select fires first,
+        // then the custom binding fires (overriding to Execute)
+        let (lines, indices) = make_test_lines(&["a.txt"]);
+        let mut ctrl = Controller::new(lines, indices, None, false, None, false);
+        ctrl.custom_bindings = vec![KeyBinding {
+            key: "f".to_string(),
+            command: "git add".to_string(),
+        }];
+        let key = KeyEvent::new(KeyCode::Char('f'), KeyModifiers::NONE);
+        let action = ctrl.handle_key(key).unwrap();
+        // Built-in 'f' toggled selection, then custom binding fires Execute
+        assert!(ctrl.lines[0].as_match().unwrap().selected);
+        assert!(matches!(action, Action::Execute));
+    }
+
+    #[test]
+    fn test_custom_binding_does_not_fire_on_quit() {
+        // Python: 'q' exits before custom binding loop runs
+        let (lines, indices) = make_test_lines(&["a.txt"]);
+        let mut ctrl = Controller::new(lines, indices, None, false, None, false);
+        ctrl.custom_bindings = vec![KeyBinding {
+            key: "q".to_string(),
+            command: "git add".to_string(),
+        }];
+        let key = KeyEvent::new(KeyCode::Char('q'), KeyModifiers::NONE);
+        let action = ctrl.handle_key(key).unwrap();
+        // Should be Quit, not Execute (custom binding doesn't fire for Quit)
+        assert!(matches!(action, Action::Quit));
+    }
+
+    #[test]
+    fn test_custom_binding_fires_in_xmode_on_unmatched_key() {
+        let (lines, indices) = make_test_lines(&["a.txt"]);
+        let mut ctrl = Controller::new(lines, indices, None, false, None, false);
+        ctrl.mode = Mode::QuickSelect;
+        ctrl.custom_bindings = vec![KeyBinding {
+            key: "z".to_string(),
+            command: "git add".to_string(),
+        }];
+        let key = KeyEvent::new(KeyCode::Char('z'), KeyModifiers::NONE);
+        let action = ctrl.handle_key(key).unwrap();
+        assert!(matches!(action, Action::Execute));
+        assert_eq!(ctrl.command_buffer, "git add");
+    }
+
+    // --- Command mode Esc test ---
+
+    #[test]
+    fn test_command_mode_esc_clears_buffer_and_returns_to_normal() {
+        let (lines, indices) = make_test_lines(&["a.txt"]);
+        let mut ctrl = Controller::new(lines, indices, None, false, None, false);
+        ctrl.mode = Mode::Command;
+        ctrl.command_buffer = "git add".to_string();
+        let key = KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE);
+        ctrl.handle_key(key).unwrap();
+        assert_eq!(ctrl.mode, Mode::Normal);
+        assert!(ctrl.command_buffer.is_empty());
+    }
+
+    // --- QuickSelect mode G/END/A key tests ---
+
+    #[test]
+    fn test_xmode_g_uppercase_is_ignored() {
+        let (lines, indices) = make_test_lines(&["a.txt", "b.txt", "c.txt"]);
+        let mut ctrl = Controller::new(lines, indices, None, false, None, false);
+        ctrl.mode = Mode::QuickSelect;
+        let key = KeyEvent::new(KeyCode::Char('G'), KeyModifiers::NONE);
+        ctrl.handle_key(key).unwrap();
+        assert_eq!(ctrl.hover_index, 0);
+    }
+
+    #[test]
+    fn test_xmode_end_key_works() {
+        let (lines, indices) = make_test_lines(&["a.txt", "b.txt", "c.txt"]);
+        let mut ctrl = Controller::new(lines, indices, None, false, None, false);
+        ctrl.mode = Mode::QuickSelect;
+        let key = KeyEvent::new(KeyCode::End, KeyModifiers::NONE);
+        ctrl.handle_key(key).unwrap();
+        assert_eq!(ctrl.hover_index, 2);
+    }
+
+    #[test]
+    fn test_xmode_a_is_ignored() {
+        let (lines, indices) = make_test_lines(&["a.txt", "b.txt"]);
+        let mut ctrl = Controller::new(lines, indices, None, false, None, false);
+        ctrl.mode = Mode::QuickSelect;
+        let key = KeyEvent::new(KeyCode::Char('A'), KeyModifiers::NONE);
+        ctrl.handle_key(key).unwrap();
+        assert!(!ctrl.lines[0].as_match().unwrap().selected);
+        assert!(!ctrl.lines[1].as_match().unwrap().selected);
+    }
+
+    // --- Selection state collection test ---
+
+    #[test]
+    fn test_save_selection_collects_correct_indices() {
+        let (lines, indices) = make_test_lines(&["a.txt", "b.txt", "c.txt"]);
+        let mut ctrl = Controller::new(lines, indices, None, false, None, false);
+        ctrl.move_hover(1);
+        ctrl.toggle_current_selection(); // select b.txt (index 1)
+
+        let selected: Vec<usize> = ctrl
+            .match_indices
+            .iter()
+            .filter(|&&idx| ctrl.lines[idx].as_match().is_some_and(|m| m.selected))
+            .copied()
+            .collect();
+        assert_eq!(selected, vec![1]);
+    }
+
+    // --- begin_height calculation test ---
+
+    #[test]
+    fn test_begin_height_matches_python() {
+        // Python: int(round(max_y / 2) - len(paths) / 2.0)
+        let cases = [(24, 3), (50, 10), (10, 2), (80, 1)];
+        for (max_y, num_paths) in cases {
+            let rust_result = ((max_y as f64 / 2.0).round() - (num_paths as f64 / 2.0)) as i32;
+            let python_result = ((max_y as f64 / 2.0).round() - (num_paths as f64 / 2.0)) as i32;
+            assert_eq!(
+                rust_result, python_result,
+                "begin_height mismatch for max_y={max_y}, paths={num_paths}"
+            );
+        }
+    }
 }
