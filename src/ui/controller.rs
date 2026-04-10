@@ -46,6 +46,8 @@ pub struct Controller {
     custom_bindings: Vec<KeyBinding>,
     all_input: bool,
     show_description: bool,
+    /// Override terminal size for testing. None = use terminal::size().
+    viewport_size: Option<(u16, u16)>,
 }
 
 impl Controller {
@@ -75,6 +77,7 @@ impl Controller {
             custom_bindings: keybindings::read_key_bindings(),
             all_input,
             show_description: false,
+            viewport_size: None,
         };
 
         if initial_select_all {
@@ -86,6 +89,17 @@ impl Controller {
         ctrl.load_previous_selection();
 
         ctrl
+    }
+
+    /// Set viewport size override (for testing).
+    pub fn set_viewport_size(&mut self, width: u16, height: u16) {
+        self.viewport_size = Some((width, height));
+    }
+
+    /// Get the effective terminal size, using override if set.
+    fn get_size(&self) -> (u16, u16) {
+        self.viewport_size
+            .unwrap_or_else(|| terminal::size().unwrap_or((80, 24)))
     }
 
     /// Run the interactive UI loop. Returns when the user makes a selection or quits.
@@ -132,7 +146,8 @@ impl Controller {
 
         loop {
             if self.dirty {
-                self.render(stdout)?;
+                let size = terminal::size()?;
+                self.render_to(stdout, size)?;
                 self.dirty = false;
             }
 
@@ -166,7 +181,7 @@ impl Controller {
         }
     }
 
-    fn handle_key(&mut self, key: KeyEvent) -> Result<Action> {
+    pub fn handle_key(&mut self, key: KeyEvent) -> Result<Action> {
         // Ctrl-C: silent exit matching Python's signal handler (sys.exit(0))
         if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
             return Ok(Action::SilentQuit);
@@ -336,8 +351,8 @@ impl Controller {
                 self.jump_to_first();
                 Ok(Action::Continue)
             }
-            // Python: G is ignored in X_MODE, but END still works
-            KeyCode::Char('G') => Ok(Action::Continue),
+            // Python: G in X_MODE is a label key (not jump-to-last).
+            // END still works as jump-to-last in all modes.
             KeyCode::End => {
                 self.jump_to_last();
                 Ok(Action::Continue)
@@ -425,14 +440,14 @@ impl Controller {
     }
 
     fn page_down(&mut self) {
-        let (width, height) = terminal::size().unwrap_or((80, 24));
+        let (width, height) = self.get_size();
         let chrome = Chrome::new(width, height);
         let page = (chrome.content_height as usize) / 2;
         self.move_hover(page as isize);
     }
 
     fn page_up(&mut self) {
-        let (width, height) = terminal::size().unwrap_or((80, 24));
+        let (width, height) = self.get_size();
         let chrome = Chrome::new(width, height);
         let page = (chrome.content_height as usize) / 2;
         self.move_hover(-(page as isize));
@@ -455,7 +470,7 @@ impl Controller {
         // Centers the viewport on the hovered line, but only repositions
         // when the current offset has drifted more than 1/4 window height
         // from the desired center (or when the hovered line is off-screen).
-        let (width, height) = terminal::size().unwrap_or((80, 24));
+        let (width, height) = self.get_size();
         let chrome = Chrome::new(width, height);
         let window_height = chrome.content_height as usize;
         let half_height = window_height.div_ceil(2);
@@ -467,13 +482,15 @@ impl Controller {
         let desired_top_row = hovered_line_idx.saturating_sub(half_height);
         let old_offset = self.scroll_offset;
 
-        // Leeway: don't reposition if within half_height/2 of desired
-        // unless the hovered line is currently off-screen
-        let hovered_off_screen =
-            hovered_line_idx < old_offset || hovered_line_idx >= old_offset + window_height;
+        // Python condition: abs(new_offset - old_offset) > half_height / 2
+        //   or self.hover_index + old_offset < 0
+        // In Python, scroll_offset is negative. Converting to Rust positive offset:
+        // - drift = abs(desired_top_row - old_offset)
+        // - hover_index < old_offset (match index vs scroll position, Python quirk)
         let drift = desired_top_row.abs_diff(old_offset);
+        let hover_before_viewport = self.hover_index < old_offset;
 
-        if drift > half_height / 2 || hovered_off_screen {
+        if drift > half_height / 2 || hover_before_viewport {
             self.scroll_offset = desired_top_row;
         }
     }
@@ -571,35 +588,39 @@ impl Controller {
 
     // --- Rendering ---
 
-    fn render(&self, stdout: &mut io::Stdout) -> Result<()> {
-        let (width, height) = terminal::size()?;
+    /// Render to any writer with a given terminal size.
+    /// Used by both the real event loop (with stdout) and tests (with Vec<u8>).
+    pub fn render_to(&self, writer: &mut impl Write, (width, height): (u16, u16)) -> Result<()> {
         let chrome = Chrome::new(width, height);
 
         // Show cursor in command mode, hide otherwise
         if self.mode == Mode::Command {
-            execute!(stdout, cursor::Show)?;
+            execute!(writer, cursor::Show)?;
         } else {
-            execute!(stdout, cursor::Hide)?;
+            execute!(writer, cursor::Hide)?;
         }
 
-        execute!(stdout, terminal::Clear(ClearType::All))?;
+        execute!(writer, terminal::Clear(ClearType::All))?;
 
         // Warning overlay: render and return (event_loop handles dismissal)
         if self.mode == Mode::Warning {
-            self.render_preset_warning(stdout, &chrome)?;
-            stdout.flush()?;
+            self.render_preset_warning(writer, &chrome)?;
+            self.render_info(writer, &chrome, height)?;
+            writer.flush()?;
             return Ok(());
         }
 
         // Command mode: show Python-style full-screen command entry UI
         if self.mode == Mode::Command {
-            self.render_command_mode(stdout, width, height)?;
-            stdout.flush()?;
+            self.render_command_mode(writer, width, height)?;
+            self.render_info(writer, &chrome, height)?;
+            writer.flush()?;
             return Ok(());
         }
 
-        // Scrollbar based on total lines (not just matches)
-        let scrollbar = ScrollBar::new(self.lines.len(), chrome.content_height as usize);
+        // Scrollbar based on total lines, using full screen height for calculations
+        // (matching Python's ScrollBar which uses max_y from getmaxyx)
+        let scrollbar = ScrollBar::new(self.lines.len(), height as usize);
         let has_scrollbar = scrollbar.is_active();
         let in_xmode = self.mode == Mode::QuickSelect;
         let text_width = chrome.text_width(has_scrollbar, in_xmode) as usize;
@@ -616,35 +637,36 @@ impl Controller {
             let line = &self.lines[line_idx];
             let is_hovered = hovered_line_idx == Some(line_idx);
 
-            execute!(stdout, cursor::MoveTo(0, row as u16))?;
+            execute!(writer, cursor::MoveTo(0, row as u16))?;
 
-            // Scrollbar (Python ASCII art style: ===, /-\, |-|, \-/, " . ")
+            // Scrollbar (Python ASCII art style: 3-char strings at col 0-2,
+            // border space at col 4, content at col 5 = CHROME_MIN_X).
+            // Col 3 is intentionally left unwritten (matching Python's erase).
+            // Use screen_row (not viewport row) for scrollbar rendering,
+            // since Python draws scrollbar based on full screen position.
+            let screen_row = row;
             if has_scrollbar {
                 if let Some(ref range) = sb_range {
-                    let sb_str = scrollbar::render_scrollbar_row(row, range);
-                    execute!(stdout, style::Print(sb_str))?;
-                } else {
-                    execute!(stdout, style::Print("    "))?;
+                    let sb_str = scrollbar::render_scrollbar_row(screen_row, range);
+                    execute!(writer, style::Print(sb_str))?;
                 }
-                // Column 4 border (Python draws " " at x=4)
-                execute!(stdout, style::Print(" "))?;
+                // Border at col 4 (Python: output_border at x_pos + 4)
+                execute!(writer, cursor::MoveTo(4, row as u16), style::Print(" "),)?;
             }
 
-            // Quick-select labels: Python renders at x=1 (fixed position)
+            // Quick-select labels: Python renders at x=0 (overwriting first char)
             if in_xmode {
                 if let Some(label) = quick_select::get_label(row) {
                     execute!(
-                        stdout,
-                        cursor::MoveTo(1, row as u16),
+                        writer,
+                        cursor::MoveTo(0, row as u16),
                         style::Print(format!("{label}")),
                     )?;
-                    // Move cursor to content start
+                }
+                // Move cursor to content start (CHROME_MIN_X = 5)
+                if !has_scrollbar {
                     let content_x = chrome.content_start_x(has_scrollbar, in_xmode);
-                    execute!(stdout, cursor::MoveTo(content_x, row as u16))?;
-                } else if !has_scrollbar {
-                    // Only need spacing when scrollbar isn't already providing it
-                    let content_x = chrome.content_start_x(has_scrollbar, in_xmode);
-                    execute!(stdout, cursor::MoveTo(content_x, row as u16))?;
+                    execute!(writer, cursor::MoveTo(content_x, row as u16))?;
                 }
             }
 
@@ -667,18 +689,50 @@ impl Controller {
                 };
 
                 let before_plain: String = plain.chars().take(ms).collect();
-                let matched_plain: String = plain.chars().skip(ms).take(me - ms).collect();
+                let mut matched_plain: String = plain.chars().skip(ms).take(me - ms).collect();
                 let after_plain: String = plain.chars().skip(me).collect();
 
-                let arrow_len = if is_selected { 5 } else { 0 };
-                let max_len = text_width.saturating_sub(arrow_len);
+                let arrow = if is_selected { "|===>" } else { "" };
+                let arrow_len = arrow.len();
+                let max_len = text_width;
+
+                // Python: update_decorated_match(max_len) — if before_text + decorated_match
+                // exceeds available space, truncate the combined (arrow + match) with |...|
+                // and drop before_text for more room.
+                // Python's plain_text = decorator_text + match, and both begin/end are taken
+                // from this combined string, so the arrow is included in the truncation.
+                let combined = format!("{arrow}{matched_plain}");
+                let important_len = before_plain.chars().count() + combined.chars().count();
+                let is_truncated = important_len > max_len;
+                let truncated_combined;
+                if is_truncated {
+                    // Python: space_allowed = max_len - |...| - decorator_text - before_text
+                    let space_allowed = max_len
+                        .saturating_sub(TRUNCATE_DECORATOR.len())
+                        .saturating_sub(arrow.len())
+                        .saturating_sub(before_plain.chars().count());
+                    if space_allowed > 1 {
+                        let mid = space_allowed / 2;
+                        let combined_chars: Vec<char> = combined.chars().collect();
+                        let total = combined_chars.len();
+                        let begin: String = combined_chars[..mid].iter().collect();
+                        let end: String =
+                            combined_chars[total.saturating_sub(mid)..].iter().collect();
+                        truncated_combined = format!("{begin}{TRUNCATE_DECORATOR}{end}");
+                    } else {
+                        truncated_combined = combined;
+                    }
+                } else {
+                    truncated_combined = combined;
+                }
 
                 // Print before_text with ANSI preserved
+                // When truncated, before_text is still shown (Python includes it in space calc)
                 let before_display = if m.formatted_text.has_ansi() {
                     let ft = crate::format::FormattedText::new(&before_raw);
                     ft.raw_truncated(max_len)
                 } else {
-                    truncate_line(&before_plain, max_len)
+                    before_plain.chars().take(max_len).collect::<String>()
                 };
                 let before_printed = if m.formatted_text.has_ansi() {
                     crate::format::FormattedText::new(&before_display)
@@ -688,58 +742,56 @@ impl Controller {
                 } else {
                     before_display.chars().count()
                 };
-                execute!(stdout, style::Print(&before_display))?;
+                execute!(writer, style::Print(&before_display))?;
                 // Reset after ANSI before_text to avoid color bleeding into match
                 if m.formatted_text.has_ansi() {
-                    execute!(stdout, style::Print("\x1b[0m"))?;
+                    execute!(writer, style::Print("\x1b[0m"))?;
                 }
 
                 // Set attributes for the match portion
                 if is_hovered && m.selected {
                     execute!(
-                        stdout,
+                        writer,
                         SetBackgroundColor(Color::Red),
                         SetForegroundColor(Color::White),
                         SetAttribute(Attribute::Bold),
                     )?;
                 } else if is_hovered {
                     execute!(
-                        stdout,
+                        writer,
                         SetBackgroundColor(Color::Blue),
                         SetForegroundColor(Color::White),
                         SetAttribute(Attribute::Bold),
                     )?;
                 } else if m.selected {
                     execute!(
-                        stdout,
+                        writer,
                         SetBackgroundColor(Color::Green),
                         SetForegroundColor(Color::White),
                         SetAttribute(Attribute::Bold),
                     )?;
                 } else if !self.all_input {
-                    execute!(stdout, SetAttribute(Attribute::Underlined))?;
+                    execute!(writer, SetAttribute(Attribute::Underlined))?;
                 }
 
-                // Arrow decorator (part of decorated_match)
-                if m.selected {
-                    execute!(stdout, style::Print("|===>"))?;
-                }
-
-                // Print match portion with attributes
+                // Print combined arrow+match (truncated if needed)
+                // Simple clipping at render time — Python clips via curses addstr.
                 let remaining = max_len.saturating_sub(before_printed);
-                let match_display = truncate_line(&matched_plain, remaining);
+                let match_display: String = truncated_combined.chars().take(remaining).collect();
                 let match_printed = match_display.chars().count();
-                execute!(stdout, style::Print(&match_display))?;
+                execute!(writer, style::Print(&match_display))?;
 
                 // Reset attributes
                 execute!(
-                    stdout,
+                    writer,
                     SetBackgroundColor(Color::Reset),
                     SetForegroundColor(Color::Reset),
                     SetAttribute(Attribute::Reset),
                 )?;
 
                 // Print after_text with ANSI preserved
+                // Simple clipping (no |...| decorator) — matches Python's curses
+                // addstr which silently clips at the right edge of the screen.
                 let after_remaining = remaining.saturating_sub(match_printed);
                 if after_remaining > 0 {
                     let after_display = if m.formatted_text.has_ansi() {
@@ -747,30 +799,60 @@ impl Controller {
                         let result = ft.raw_truncated(after_remaining);
                         format!("{result}\x1b[0m")
                     } else {
-                        truncate_line(&after_plain, after_remaining)
+                        after_plain
+                            .chars()
+                            .take(after_remaining)
+                            .collect::<String>()
                     };
-                    execute!(stdout, style::Print(&after_display))?;
+                    execute!(writer, style::Print(&after_display))?;
                 }
             } else {
                 // SimpleLine: no attributes, just print with ANSI preservation
+                // Simple clipping at the right edge (matching Python's curses addstr)
                 let ft = line.formatted_text();
                 let display = if ft.has_ansi() {
-                    ft.raw_truncated_with_decorator(text_width)
+                    ft.raw_truncated(text_width)
                 } else {
-                    truncate_line(ft.plain_text(), text_width)
+                    ft.plain_text().chars().take(text_width).collect::<String>()
                 };
-                execute!(stdout, style::Print(&display))?;
+                execute!(writer, style::Print(&display))?;
+            }
+        }
+
+        // Draw scrollbar and x-mode labels for rows beyond content area
+        // Python draws scrollbar across full screen height and x-mode labels on all rows
+        {
+            let content_rows = viewport_end - self.scroll_offset;
+            for row in content_rows..height as usize {
+                execute!(writer, cursor::MoveTo(0, row as u16))?;
+                if has_scrollbar {
+                    if let Some(ref range) = sb_range {
+                        let sb_str = scrollbar::render_scrollbar_row(row, range);
+                        execute!(writer, style::Print(sb_str))?;
+                    }
+                    execute!(writer, cursor::MoveTo(4, row as u16), style::Print(" "),)?;
+                }
+                // X-mode labels continue on empty rows (but not the last row = usage line)
+                if in_xmode && row < (height as usize).saturating_sub(1) {
+                    if let Some(label) = quick_select::get_label(row) {
+                        execute!(
+                            writer,
+                            cursor::MoveTo(0, row as u16),
+                            style::Print(format!("{label}")),
+                        )?;
+                    }
+                }
             }
         }
 
         // Bottom info bar (narrow mode) or sidebar (wide mode)
-        self.render_info(stdout, &chrome)?;
+        self.render_info(writer, &chrome, height)?;
 
-        stdout.flush()?;
+        writer.flush()?;
         Ok(())
     }
 
-    fn render_preset_warning(&self, stdout: &mut io::Stdout, chrome: &Chrome) -> Result<()> {
+    fn render_preset_warning(&self, writer: &mut impl Write, chrome: &Chrome) -> Result<()> {
         // Python: (min_x, min_y, _, max_y) = get_chrome_boundaries()
         // max_y accounts for narrow info bar (height - 4 in narrow mode)
         let max_y = chrome.content_height;
@@ -781,7 +863,7 @@ impl Controller {
         let x_start = if has_scrollbar { 5u16 } else { 0u16 };
 
         execute!(
-            stdout,
+            writer,
             cursor::MoveTo(x_start, y_start),
             SetBackgroundColor(Color::Red),
             SetForegroundColor(Color::White),
@@ -792,14 +874,14 @@ impl Controller {
 
         if let Some(ref cmd) = self.preset_command {
             execute!(
-                stdout,
+                writer,
                 cursor::MoveTo(x_start, y_start + 1),
                 style::Print(format!("The command you provided was \"{cmd}\" ")),
             )?;
         }
 
         execute!(
-            stdout,
+            writer,
             cursor::MoveTo(x_start, y_start + 2),
             style::Print("Press any key to go back to selecting paths."),
         )?;
@@ -809,7 +891,7 @@ impl Controller {
 
     /// Render command mode UI matching Python's show_and_get_command().
     /// Shows selected paths, prompt text, and command input.
-    fn render_command_mode(&self, stdout: &mut io::Stdout, width: u16, height: u16) -> Result<()> {
+    fn render_command_mode(&self, writer: &mut impl Write, width: u16, height: u16) -> Result<()> {
         use super::chrome::{SHORT_COMMAND_PROMPT, SHORT_COMMAND_PROMPT2, SHORT_PATHS_HEADER};
 
         let paths: Vec<String> = self
@@ -836,33 +918,35 @@ impl Controller {
 
         // Print paths header
         let start_height = begin_height - 1 - paths.len() as i32;
-        let print_at = |stdout: &mut io::Stdout, y: i32, text: &str| -> Result<()> {
-            if y >= 0 && y < max_y {
-                execute!(stdout, cursor::MoveTo(0, y as u16), style::Print(text))?;
-            }
-            Ok(())
-        };
 
-        print_at(stdout, start_height - 3, &border_line)?;
-        print_at(stdout, start_height - 2, SHORT_PATHS_HEADER)?;
-        print_at(stdout, start_height - 1, &border_line)?;
+        macro_rules! print_at {
+            ($w:expr, $y:expr, $text:expr) => {
+                if $y >= 0 && $y < max_y {
+                    execute!($w, cursor::MoveTo(0, $y as u16), style::Print($text))?;
+                }
+            };
+        }
+
+        print_at!(writer, start_height - 3, &border_line);
+        print_at!(writer, start_height - 2, SHORT_PATHS_HEADER);
+        print_at!(writer, start_height - 1, &border_line);
 
         for (i, path) in paths.iter().enumerate() {
             let truncated: String = path.chars().take(max_path_length).collect();
-            print_at(stdout, start_height + i as i32, &truncated)?;
+            print_at!(writer, start_height + i as i32, &truncated);
         }
 
         // Print prompt
-        print_at(stdout, begin_height - 1, &border_line)?;
-        print_at(stdout, begin_height, SHORT_COMMAND_PROMPT)?;
-        print_at(stdout, begin_height + 1, SHORT_COMMAND_PROMPT2)?;
-        print_at(stdout, begin_height + 2, &border_line)?;
+        print_at!(writer, begin_height - 1, &border_line);
+        print_at!(writer, begin_height, SHORT_COMMAND_PROMPT);
+        print_at!(writer, begin_height + 1, SHORT_COMMAND_PROMPT2);
+        print_at!(writer, begin_height + 2, &border_line);
 
         // Print command input line
         let input_y = begin_height + 3;
         if input_y >= 0 && input_y < max_y {
             execute!(
-                stdout,
+                writer,
                 cursor::MoveTo(0, input_y as u16),
                 style::Print(&prompt_line),
                 cursor::MoveTo(0, input_y as u16),
@@ -874,15 +958,13 @@ impl Controller {
         Ok(())
     }
 
-    fn render_info(&self, stdout: &mut io::Stdout, chrome: &Chrome) -> Result<()> {
-        let (_, height) = terminal::size().unwrap_or((80, 24));
-
+    fn render_info(&self, writer: &mut impl Write, chrome: &Chrome, height: u16) -> Result<()> {
         if chrome.is_wide {
             let border_x = chrome.content_width;
 
             // Draw vertical border '|' (matching Python's HelperChrome)
             for row in 0..height {
-                execute!(stdout, cursor::MoveTo(border_x, row), style::Print("|"),)?;
+                execute!(writer, cursor::MoveTo(border_x, row), style::Print("|"),)?;
             }
 
             // Sidebar: show USAGE_PAGE or USAGE_COMMAND_PAGE (matching Python)
@@ -892,13 +974,17 @@ impl Controller {
                 super::chrome::USAGE_PAGE
             };
 
+            // Python: HelperChrome.get_min_y() = CHROME_MIN_Y = 0
+            let sidebar_start_y = 0u16;
             let max_w = chrome.sidebar_width as usize - 2;
-            for (i, line) in sidebar_text.lines().enumerate() {
-                if (i as u16) < height {
+            for (i, line) in sidebar_text.split('\n').enumerate() {
+                let row = sidebar_start_y + i as u16;
+                if row < height {
                     let truncated: String = line.chars().take(max_w).collect();
+                    // Python: addstr(min_y + index, border_x + 2, usage_line)
                     execute!(
-                        stdout,
-                        cursor::MoveTo(border_x + 1, i as u16),
+                        writer,
+                        cursor::MoveTo(border_x + 2, row),
                         style::Print(&truncated),
                     )?;
                 }
@@ -911,20 +997,20 @@ impl Controller {
                         let desc = m.get_file_description();
                         let header = format!("Description for {}:", m.path);
                         let truncated_header: String = header.chars().take(max_w).collect();
-                        // Clear sidebar area and show description
-                        let desc_start = sidebar_text.lines().count() as u16 + 1;
+                        // Python: start_y = sidebar_y + 1 = (min_y + count - 1) + 1 = min_y + count
+                        let desc_start = sidebar_start_y + sidebar_text.split('\n').count() as u16;
                         execute!(
-                            stdout,
+                            writer,
                             cursor::MoveTo(border_x + 1, desc_start),
-                            style::Print(format!(" {truncated_header}")),
+                            style::Print(&truncated_header),
                         )?;
                         for (i, line) in desc.iter().enumerate() {
                             let truncated: String =
                                 line.chars().take(max_w.saturating_sub(6)).collect();
                             execute!(
-                                stdout,
+                                writer,
                                 cursor::MoveTo(border_x + 1, desc_start + 2 + i as u16),
-                                style::Print(format!("     * {truncated}")),
+                                style::Print(format!("    * {truncated}")),
                             )?;
                         }
                     }
@@ -933,15 +1019,35 @@ impl Controller {
         } else {
             // Narrow mode bottom info bar
             // Python: border and usage start at get_min_x() which is CHROME_MIN_X (5) when scrollbar active
+            // In command/warning mode, the scrollbar isn't visible so min_x is 0
+            let in_overlay = matches!(self.mode, Mode::Command | Mode::Warning);
             let has_scrollbar =
-                ScrollBar::new(self.lines.len(), chrome.content_height as usize).is_active();
-            let min_x = if has_scrollbar { 5u16 } else { 0u16 };
+                !in_overlay && ScrollBar::new(self.lines.len(), height as usize).is_active();
+            let in_xmode = matches!(self.mode, Mode::QuickSelect);
+            let min_x = if has_scrollbar || in_xmode {
+                5u16
+            } else {
+                0u16
+            };
 
-            let border_y = chrome.content_height;
+            // Python: border at max_y - 2 (using original screen height, not reduced viewport)
+            let border_y = height.saturating_sub(2);
+
+            // In x-mode, labels continue on border line (not usage line)
+            if in_xmode {
+                if let Some(label) = quick_select::get_label(border_y as usize) {
+                    execute!(
+                        writer,
+                        cursor::MoveTo(0, border_y),
+                        style::Print(format!("{label}")),
+                    )?;
+                }
+            }
+
             let border_width = (chrome.content_width as usize).saturating_sub(min_x as usize);
             let border: String = "_".repeat(border_width);
             execute!(
-                stdout,
+                writer,
                 cursor::MoveTo(min_x, border_y),
                 style::Print(&border),
             )?;
@@ -957,11 +1063,15 @@ impl Controller {
                     }
                 }
             };
+            // Truncate usage text to available width to prevent line wrapping
+            // (curses addstr truncates at screen edge; crossterm Print wraps)
+            let max_usage_width = (chrome.content_width - min_x) as usize;
+            let truncated_usage: String = usage.chars().take(max_usage_width).collect();
             execute!(
-                stdout,
+                writer,
                 cursor::MoveTo(min_x, border_y + 1),
                 SetForegroundColor(Color::DarkGrey),
-                style::Print(usage),
+                style::Print(&truncated_usage),
                 SetForegroundColor(Color::Reset),
             )?;
         }
@@ -970,7 +1080,7 @@ impl Controller {
     }
 }
 
-enum Action {
+pub enum Action {
     Continue,
     Quit,
     /// Ctrl-C: silent exit (no script written, no selection saved, like Python's sys.exit(0))
@@ -1497,6 +1607,402 @@ mod tests {
             .copied()
             .collect();
         assert_eq!(selected, vec![1]);
+    }
+
+    // --- F key (toggle + move down) tests ---
+
+    #[test]
+    fn test_f_uppercase_toggles_and_moves_down() {
+        let (lines, indices) = make_test_lines(&["a.txt", "b.txt", "c.txt"]);
+        let mut ctrl = Controller::new(lines, indices, None, false, None, false);
+        assert_eq!(ctrl.hover_index, 0);
+
+        let key = KeyEvent::new(KeyCode::Char('F'), KeyModifiers::NONE);
+        ctrl.handle_key(key).unwrap();
+        // a.txt should be selected, hover moved to b.txt
+        assert!(ctrl.lines[0].as_match().unwrap().selected);
+        assert_eq!(ctrl.hover_index, 1);
+    }
+
+    #[test]
+    fn test_f_uppercase_wraps_at_end() {
+        let (lines, indices) = make_test_lines(&["a.txt", "b.txt"]);
+        let mut ctrl = Controller::new(lines, indices, None, false, None, false);
+        ctrl.hover_index = 1; // last item
+
+        let key = KeyEvent::new(KeyCode::Char('F'), KeyModifiers::NONE);
+        ctrl.handle_key(key).unwrap();
+        assert!(ctrl.lines[1].as_match().unwrap().selected);
+        assert_eq!(ctrl.hover_index, 0); // wrapped to first
+    }
+
+    // --- Page down / page up tests ---
+
+    #[test]
+    fn test_page_down_via_space() {
+        // terminal::size() returns fallback (80,24) in test → content_height=20 → page=10
+        let paths: Vec<&str> = (0..30).map(|_| "f.txt").collect();
+        let (lines, indices) = make_test_lines(&paths);
+        let mut ctrl = Controller::new(lines, indices, None, false, None, false);
+        assert_eq!(ctrl.hover_index, 0);
+
+        let key = KeyEvent::new(KeyCode::Char(' '), KeyModifiers::NONE);
+        ctrl.handle_key(key).unwrap();
+        assert!(ctrl.hover_index > 0, "page_down should move hover forward");
+    }
+
+    #[test]
+    fn test_page_up_via_b() {
+        let paths: Vec<&str> = (0..30).map(|_| "f.txt").collect();
+        let (lines, indices) = make_test_lines(&paths);
+        let mut ctrl = Controller::new(lines, indices, None, false, None, false);
+        ctrl.hover_index = 15;
+
+        let key = KeyEvent::new(KeyCode::Char('b'), KeyModifiers::NONE);
+        ctrl.handle_key(key).unwrap();
+        assert!(ctrl.hover_index < 15, "page_up should move hover backward");
+    }
+
+    #[test]
+    fn test_page_down_via_npage() {
+        let paths: Vec<&str> = (0..30).map(|_| "f.txt").collect();
+        let (lines, indices) = make_test_lines(&paths);
+        let mut ctrl = Controller::new(lines, indices, None, false, None, false);
+
+        let key = KeyEvent::new(KeyCode::PageDown, KeyModifiers::NONE);
+        ctrl.handle_key(key).unwrap();
+        assert!(ctrl.hover_index > 0);
+    }
+
+    #[test]
+    fn test_page_up_via_ppage() {
+        let paths: Vec<&str> = (0..30).map(|_| "f.txt").collect();
+        let (lines, indices) = make_test_lines(&paths);
+        let mut ctrl = Controller::new(lines, indices, None, false, None, false);
+        ctrl.hover_index = 20;
+
+        let key = KeyEvent::new(KeyCode::PageUp, KeyModifiers::NONE);
+        ctrl.handle_key(key).unwrap();
+        assert!(ctrl.hover_index < 20);
+    }
+
+    #[test]
+    fn test_page_down_wraps_around() {
+        let paths: Vec<&str> = (0..5).map(|_| "f.txt").collect();
+        let (lines, indices) = make_test_lines(&paths);
+        let mut ctrl = Controller::new(lines, indices, None, false, None, false);
+        ctrl.hover_index = 4; // last item
+
+        let key = KeyEvent::new(KeyCode::Char(' '), KeyModifiers::NONE);
+        ctrl.handle_key(key).unwrap();
+        // Should wrap since page size > remaining items
+        // move_hover wraps via modular arithmetic
+        assert!(ctrl.hover_index < 5);
+    }
+
+    // --- Multi-step interaction sequence tests (matching Python test_screen.py) ---
+
+    /// Python: selectDownSelect — [f, j, f]
+    #[test]
+    fn test_sequence_select_down_select() {
+        let (lines, indices) = make_test_lines(&["a.txt", "b.txt", "c.txt"]);
+        let mut ctrl = Controller::new(lines, indices, None, false, None, false);
+
+        // f: select a.txt
+        ctrl.handle_key(KeyEvent::new(KeyCode::Char('f'), KeyModifiers::NONE))
+            .unwrap();
+        assert!(ctrl.lines[0].as_match().unwrap().selected);
+
+        // j: move down
+        ctrl.handle_key(KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE))
+            .unwrap();
+        assert_eq!(ctrl.hover_index, 1);
+
+        // f: select b.txt
+        ctrl.handle_key(KeyEvent::new(KeyCode::Char('f'), KeyModifiers::NONE))
+            .unwrap();
+        assert!(ctrl.lines[0].as_match().unwrap().selected);
+        assert!(ctrl.lines[1].as_match().unwrap().selected);
+        assert!(!ctrl.lines[2].as_match().unwrap().selected);
+    }
+
+    /// Python: selectWithDownSelect — [F, f]
+    #[test]
+    fn test_sequence_select_with_down_select() {
+        let (lines, indices) = make_test_lines(&["a.txt", "b.txt", "c.txt"]);
+        let mut ctrl = Controller::new(lines, indices, None, false, None, false);
+
+        // F: select a.txt + move down
+        ctrl.handle_key(KeyEvent::new(KeyCode::Char('F'), KeyModifiers::NONE))
+            .unwrap();
+        assert!(ctrl.lines[0].as_match().unwrap().selected);
+        assert_eq!(ctrl.hover_index, 1);
+
+        // f: select b.txt
+        ctrl.handle_key(KeyEvent::new(KeyCode::Char('f'), KeyModifiers::NONE))
+            .unwrap();
+        assert!(ctrl.lines[0].as_match().unwrap().selected);
+        assert!(ctrl.lines[1].as_match().unwrap().selected);
+    }
+
+    /// Python: selectDownSelectInverse — [f, j, f, A]
+    #[test]
+    fn test_sequence_select_down_select_inverse() {
+        let (lines, indices) = make_test_lines(&["a.txt", "b.txt", "c.txt"]);
+        let mut ctrl = Controller::new(lines, indices, None, false, None, false);
+
+        // f: select a.txt
+        ctrl.handle_key(KeyEvent::new(KeyCode::Char('f'), KeyModifiers::NONE))
+            .unwrap();
+        // j: move down
+        ctrl.handle_key(KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE))
+            .unwrap();
+        // f: select b.txt
+        ctrl.handle_key(KeyEvent::new(KeyCode::Char('f'), KeyModifiers::NONE))
+            .unwrap();
+        // A: toggle all — a.txt OFF, b.txt OFF, c.txt ON
+        ctrl.handle_key(KeyEvent::new(KeyCode::Char('A'), KeyModifiers::NONE))
+            .unwrap();
+
+        assert!(!ctrl.lines[0].as_match().unwrap().selected);
+        assert!(!ctrl.lines[1].as_match().unwrap().selected);
+        assert!(ctrl.lines[2].as_match().unwrap().selected);
+    }
+
+    /// Python: selectWithDownSelectInverse — [F, F, A]
+    #[test]
+    fn test_sequence_select_with_down_select_inverse() {
+        let (lines, indices) = make_test_lines(&["a.txt", "b.txt", "c.txt"]);
+        let mut ctrl = Controller::new(lines, indices, None, false, None, false);
+
+        // F: select a.txt + move down
+        ctrl.handle_key(KeyEvent::new(KeyCode::Char('F'), KeyModifiers::NONE))
+            .unwrap();
+        // F: select b.txt + move down
+        ctrl.handle_key(KeyEvent::new(KeyCode::Char('F'), KeyModifiers::NONE))
+            .unwrap();
+        // A: toggle all — a OFF, b OFF, c ON
+        ctrl.handle_key(KeyEvent::new(KeyCode::Char('A'), KeyModifiers::NONE))
+            .unwrap();
+
+        assert!(!ctrl.lines[0].as_match().unwrap().selected);
+        assert!(!ctrl.lines[1].as_match().unwrap().selected);
+        assert!(ctrl.lines[2].as_match().unwrap().selected);
+    }
+
+    /// Python: selectTwoCommandMode — [f, j, f, c] with past_screen check
+    #[test]
+    fn test_sequence_select_two_then_command_mode() {
+        let (lines, indices) = make_test_lines(&["a.txt", "b.txt", "c.txt"]);
+        let mut ctrl = Controller::new(lines, indices, None, false, None, false);
+
+        ctrl.handle_key(KeyEvent::new(KeyCode::Char('f'), KeyModifiers::NONE))
+            .unwrap();
+        ctrl.handle_key(KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE))
+            .unwrap();
+        ctrl.handle_key(KeyEvent::new(KeyCode::Char('f'), KeyModifiers::NONE))
+            .unwrap();
+        ctrl.handle_key(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::NONE))
+            .unwrap();
+
+        assert_eq!(ctrl.mode, Mode::Command);
+        assert!(ctrl.lines[0].as_match().unwrap().selected);
+        assert!(ctrl.lines[1].as_match().unwrap().selected);
+    }
+
+    /// Python: allInputBranch — [-ai, j, f]
+    #[test]
+    fn test_sequence_all_input_select() {
+        let (lines, indices) = make_test_lines(&["branch-1", "branch-2", "branch-3"]);
+        let mut ctrl = Controller::new(lines, indices, None, false, None, true);
+
+        ctrl.handle_key(KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE))
+            .unwrap();
+        assert_eq!(ctrl.hover_index, 1);
+
+        ctrl.handle_key(KeyEvent::new(KeyCode::Char('f'), KeyModifiers::NONE))
+            .unwrap();
+        assert!(ctrl.lines[1].as_match().unwrap().selected);
+
+        // Enter should be blocked (all_input, no preset command)
+        let action = ctrl
+            .handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE))
+            .unwrap();
+        assert!(matches!(action, Action::Continue));
+    }
+
+    /// Python: longListPageUpAndDown — [NPAGE, NPAGE, NPAGE, PPAGE]
+    #[test]
+    fn test_sequence_page_down_then_up() {
+        let paths: Vec<&str> = (0..50).map(|_| "f.txt").collect();
+        let (lines, indices) = make_test_lines(&paths);
+        let mut ctrl = Controller::new(lines, indices, None, false, None, false);
+
+        // 3x page down
+        for _ in 0..3 {
+            ctrl.handle_key(KeyEvent::new(KeyCode::PageDown, KeyModifiers::NONE))
+                .unwrap();
+        }
+        let after_down = ctrl.hover_index;
+        assert!(after_down > 0, "should have moved forward");
+
+        // 1x page up
+        ctrl.handle_key(KeyEvent::new(KeyCode::PageUp, KeyModifiers::NONE))
+            .unwrap();
+        assert!(ctrl.hover_index < after_down, "page up should move back");
+    }
+
+    /// Python: longListHomeKey — [SPACE, SPACE, HOME]
+    #[test]
+    fn test_sequence_page_down_then_home() {
+        let paths: Vec<&str> = (0..50).map(|_| "f.txt").collect();
+        let (lines, indices) = make_test_lines(&paths);
+        let mut ctrl = Controller::new(lines, indices, None, false, None, false);
+
+        ctrl.handle_key(KeyEvent::new(KeyCode::Char(' '), KeyModifiers::NONE))
+            .unwrap();
+        ctrl.handle_key(KeyEvent::new(KeyCode::Char(' '), KeyModifiers::NONE))
+            .unwrap();
+        assert!(ctrl.hover_index > 0);
+
+        ctrl.handle_key(KeyEvent::new(KeyCode::Home, KeyModifiers::NONE))
+            .unwrap();
+        assert_eq!(ctrl.hover_index, 0);
+    }
+
+    /// Python: xModeWithSelect — [x, G, J] (G ignored, J is quick-select label)
+    #[test]
+    fn test_sequence_xmode_interactions() {
+        let (lines, indices) = make_test_lines(&["a.txt", "b.txt", "c.txt"]);
+        let mut ctrl = Controller::new(lines, indices, None, false, None, false);
+
+        // x: enter quick-select mode
+        ctrl.handle_key(KeyEvent::new(KeyCode::Char('x'), KeyModifiers::NONE))
+            .unwrap();
+        assert_eq!(ctrl.mode, Mode::QuickSelect);
+
+        // G: should be ignored in X_MODE (Python compat)
+        ctrl.handle_key(KeyEvent::new(KeyCode::Char('G'), KeyModifiers::NONE))
+            .unwrap();
+        assert_eq!(ctrl.hover_index, 0); // didn't jump to last
+
+        // J: is a quick-select label — selects item at that row
+        ctrl.handle_key(KeyEvent::new(KeyCode::Char('J'), KeyModifiers::NONE))
+            .unwrap();
+        // J is in LABELS at some index, should toggle that row's selection
+    }
+
+    /// Python: selectAllBug — [A] on long list
+    #[test]
+    fn test_select_all_on_long_list() {
+        let paths: Vec<&str> = (0..50).map(|_| "f.txt").collect();
+        let (lines, indices) = make_test_lines(&paths);
+        let mut ctrl = Controller::new(lines, indices, None, false, None, false);
+
+        ctrl.handle_key(KeyEvent::new(KeyCode::Char('A'), KeyModifiers::NONE))
+            .unwrap();
+        // All unique paths should be selected (only 1 unique path "f.txt",
+        // so only first occurrence gets toggled)
+        let selected_count = ctrl
+            .lines
+            .iter()
+            .filter(|l| l.as_match().is_some_and(|m| m.selected))
+            .count();
+        assert!(selected_count > 0);
+    }
+
+    // --- Scroll offset tests ---
+
+    #[test]
+    fn test_scroll_offset_updates_on_jump_to_last() {
+        let paths: Vec<&str> = (0..100).map(|_| "f.txt").collect();
+        let (lines, indices) = make_test_lines(&paths);
+        let mut ctrl = Controller::new(lines, indices, None, false, None, false);
+        assert_eq!(ctrl.scroll_offset, 0);
+
+        ctrl.jump_to_last();
+        assert_eq!(ctrl.hover_index, 99);
+        // scroll_offset should have moved to show the last item
+        assert!(
+            ctrl.scroll_offset > 0,
+            "scroll should have moved for last item"
+        );
+    }
+
+    #[test]
+    fn test_scroll_offset_resets_on_jump_to_first() {
+        let paths: Vec<&str> = (0..100).map(|_| "f.txt").collect();
+        let (lines, indices) = make_test_lines(&paths);
+        let mut ctrl = Controller::new(lines, indices, None, false, None, false);
+
+        ctrl.jump_to_last();
+        assert!(ctrl.scroll_offset > 0);
+
+        ctrl.jump_to_first();
+        assert_eq!(ctrl.hover_index, 0);
+        assert_eq!(ctrl.scroll_offset, 0);
+    }
+
+    #[test]
+    fn test_scroll_offset_no_change_for_small_list() {
+        let (lines, indices) = make_test_lines(&["a.txt", "b.txt", "c.txt"]);
+        let mut ctrl = Controller::new(lines, indices, None, false, None, false);
+
+        ctrl.move_hover(1);
+        assert_eq!(ctrl.scroll_offset, 0, "small list should not scroll");
+
+        ctrl.move_hover(1);
+        assert_eq!(ctrl.scroll_offset, 0);
+    }
+
+    // --- Command mode typing test ---
+
+    #[test]
+    fn test_command_mode_typing_builds_buffer() {
+        let (lines, indices) = make_test_lines(&["a.txt"]);
+        let mut ctrl = Controller::new(lines, indices, None, false, None, false);
+        ctrl.mode = Mode::Command;
+
+        for ch in "git add".chars() {
+            ctrl.handle_key(KeyEvent::new(KeyCode::Char(ch), KeyModifiers::NONE))
+                .unwrap();
+        }
+        assert_eq!(ctrl.command_buffer, "git add");
+
+        // Enter executes the command
+        let action = ctrl
+            .handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE))
+            .unwrap();
+        assert!(matches!(action, Action::Execute));
+    }
+
+    /// Python: selectCommandWithPassedCommand — [f, c, a] with -c flag
+    #[test]
+    fn test_sequence_command_mode_with_preset_warning_dismiss() {
+        let (lines, indices) = make_test_lines(&["a.txt", "b.txt"]);
+        let mut ctrl = Controller::new(
+            lines,
+            indices,
+            Some("git add".to_string()),
+            false,
+            None,
+            false,
+        );
+
+        // f: select a.txt
+        ctrl.handle_key(KeyEvent::new(KeyCode::Char('f'), KeyModifiers::NONE))
+            .unwrap();
+        assert!(ctrl.lines[0].as_match().unwrap().selected);
+
+        // c: should show warning (preset command exists)
+        ctrl.handle_key(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::NONE))
+            .unwrap();
+        assert_eq!(ctrl.mode, Mode::Warning);
+
+        // a: dismiss warning, return to Normal
+        ctrl.handle_key(KeyEvent::new(KeyCode::Char('a'), KeyModifiers::NONE))
+            .unwrap();
+        assert_eq!(ctrl.mode, Mode::Normal);
     }
 
     // --- begin_height calculation test ---

@@ -1,19 +1,11 @@
-mod format;
-mod input;
-mod keybindings;
-mod line;
-mod logger;
-mod output;
-mod parse;
-mod state;
-mod ui;
-
 use std::io::IsTerminal;
 use std::os::unix::io::AsRawFd;
 use std::process;
 
 use anyhow::Result;
 use clap::Parser;
+
+use fpp::{input, line, output, state, ui};
 
 /// A fast file path picker - Rust rewrite of Facebook's PathPicker (fpp).
 /// Parses file paths from stdin and presents an interactive selection UI.
@@ -129,6 +121,11 @@ fn run_once(args: &Args, lines: Vec<line::Line>, match_indices: Vec<usize>) -> R
 /// Execute the generated .fpp.sh script using the user's shell.
 /// Mirrors Python's fpp bash wrapper behavior.
 fn execute_script(non_interactive: bool) -> Result<()> {
+    // Allow skipping script execution for testing (e2e tests only need .fpp.sh content)
+    if std::env::var("FPP_SKIP_EXECUTE").is_ok() {
+        return Ok(());
+    }
+
     let script_path = state::get_script_output_path();
     if !script_path.exists() {
         return Ok(());
@@ -234,7 +231,7 @@ fn main() -> Result<()> {
     let lines = input::get_line_objs_from_lines(&raw_lines, validate_files, all_input);
     let match_indices = input::get_matches(&lines);
 
-    if args.keep_open {
+    if args.keep_open && std::env::var("FPP_SKIP_EXECUTE").is_err() {
         loop {
             let _ = state::delete_selection();
             run_once(&args, lines.clone(), match_indices.clone())?;

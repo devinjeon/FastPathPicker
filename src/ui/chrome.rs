@@ -26,7 +26,8 @@ impl Chrome {
         }
     }
 
-    /// Get the x-offset where content starts (after scrollbar area).
+    /// Get the x-offset where content starts (after scrollbar/x-mode area).
+    /// Python's CHROME_MIN_X = 5 for both scrollbar and x-mode.
     pub fn content_start_x(&self, has_scrollbar: bool, x_mode: bool) -> u16 {
         if has_scrollbar || x_mode {
             5
@@ -53,7 +54,7 @@ pub const USAGE_XMODE: &str =
     "[f|A] selection, [down|j|up|k|space|b] navigation, [enter] open, [x] quick select mode, [c] command mode";
 
 /// Sidebar usage text (matching Python's usage_strings.py USAGE_PAGE).
-pub const USAGE_PAGE: &str = "\
+pub const USAGE_PAGE: &str = "
     * [f] toggle the selection of a file
     * [F] toggle and move downward by 1
     * [A] toggle selection of all (unique) files
@@ -73,10 +74,10 @@ them via command mode:
     * [<Enter>] open all selected files
         (or file under cursor if none selected)
         in $EDITOR
-    * [c] enter command mode";
+    * [c] enter command mode
+";
 
-pub const USAGE_COMMAND_PAGE: &str = "\
-Command mode is helpful when you want to
+pub const USAGE_COMMAND_PAGE: &str = "Command mode is helpful when you want to
 execute bash commands with the filenames
 you have selected. By default the filenames
 are appended automatically to command you
