@@ -19,6 +19,14 @@ libc = "0.2"
 tempfile = "3"
 vt100 = "0.16"
 
+[[test]]
+name = "e2e_screen"
+path = "tests/e2e/screen_test.rs"
+
+[[test]]
+name = "e2e_pipe_stdin"
+path = "tests/e2e/pipe_stdin_test.rs"
+
 [profile.release]
 lto = true
 strip = true

@@ -1,4 +1,4 @@
-.PHONY: all build dev test test-unit test-integ test-e2e bench-e2e lint fmt clean install qa
+.PHONY: all build dev test test-unit test-integ test-e2e test-e2e-suite bench-e2e lint fmt clean install qa
 
 export PATH := $(HOME)/.cargo/bin:$(PATH)
 CARGO := cargo
@@ -27,6 +27,10 @@ test-e2e: build
 
 test-e2e-rust: build
 	@bash tests/e2e/run_e2e.sh --rust-only
+
+test-e2e-suite: build
+	@test -n "$(SUITE)" || (echo "Usage: make test-e2e-suite SUITE=01_basic_parsing"; exit 1)
+	@bash tests/e2e/run_e2e.sh --suite=$(SUITE)
 
 test-e2e-update: build
 	@bash tests/e2e/run_e2e.sh --update-snapshots
