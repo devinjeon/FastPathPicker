@@ -17,7 +17,7 @@ dev:
 test: test-unit test-integ test-e2e
 
 test-unit:
-	$(CARGO) test --bins
+	$(CARGO) test --bins --lib
 
 test-integ:
 	$(CARGO) test --test '*'
