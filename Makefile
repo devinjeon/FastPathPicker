@@ -2,7 +2,7 @@
 
 export PATH := $(HOME)/.cargo/bin:$(PATH)
 CARGO := cargo
-BINARY := fpp
+BINARY := fpp2
 INSTALL_DIR := $(HOME)/.cargo/bin
 ORIGINAL_FPP := $(CURDIR)/PathPicker/fpp
 

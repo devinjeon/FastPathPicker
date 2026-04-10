@@ -5,21 +5,21 @@ use std::process;
 use anyhow::Result;
 use clap::Parser;
 
-use fpp::{input, line, output, state, ui};
+use fpp2::{input, line, output, state, ui};
 
-/// A fast file path picker - Rust rewrite of Facebook's PathPicker (fpp).
+/// Fast PathPicker 2 — a high-performance Rust drop-in replacement for Facebook's PathPicker.
 /// Parses file paths from stdin and presents an interactive selection UI.
 #[derive(Parser, Debug)]
 #[command(
-    name = "fpp",
-    version = "version 0.9.5",
+    name = "fpp2",
+    version = env!("CARGO_PKG_VERSION"),
     about = "
-fpp - fast PathPicker
+fpp2 - Fast PathPicker 2
 
-Pipe any command output to fpp to select files interactively:
-  git status | fpp
-  grep -rn pattern . | fpp
-  find . -name '*.rs' | fpp
+Pipe any command output to fpp2 to select files interactively:
+  git status | fpp2
+  grep -rn pattern . | fpp2
+  find . -name '*.rs' | fpp2
 
 Navigate with j/k or arrows, f to select, ENTER to open in editor.
 Press c to enter command mode, or use -c to specify a command.
@@ -171,7 +171,7 @@ fn main() -> Result<()> {
     let args = Args::parse_from(preprocess_args());
 
     if args.debug {
-        eprintln!("fpp executing in: {}", std::env::current_dir()?.display());
+        eprintln!("fpp2 executing in: {}", std::env::current_dir()?.display());
     }
 
     if args.record {
@@ -197,13 +197,13 @@ fn main() -> Result<()> {
 
         match state::load_input_cache() {
             Ok(cached) => {
-                eprintln!("Using previous input piped to fpp...");
+                eprintln!("Using previous input piped to fpp2...");
                 cached
             }
             Err(_) => {
-                eprintln!("No input provided. Pipe command output to fpp:");
-                eprintln!("  git status | fpp");
-                eprintln!("  grep -rn pattern . | fpp");
+                eprintln!("No input provided. Pipe command output to fpp2:");
+                eprintln!("  git status | fpp2");
+                eprintln!("  grep -rn pattern . | fpp2");
                 return Ok(());
             }
         }

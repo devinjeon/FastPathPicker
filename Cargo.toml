@@ -1,8 +1,8 @@
 [package]
-name = "fpp"
-version = "0.9.5"
+name = "fpp2"
+version = "0.1.0"
 edition = "2021"
-description = "A fast Rust rewrite of Facebook's PathPicker (fpp)"
+description = "Fast PathPicker 2 — a high-performance Rust drop-in replacement for Facebook's PathPicker"
 license = "MIT"
 
 [dependencies]

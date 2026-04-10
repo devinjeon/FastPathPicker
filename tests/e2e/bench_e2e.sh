@@ -27,7 +27,7 @@ DIM='\033[2m'
 NC='\033[0m'
 
 # Defaults
-RUST_BINARY="${FPP_BINARY:-$PROJECT_ROOT/target/release/fpp}"
+RUST_BINARY="${FPP_BINARY:-$PROJECT_ROOT/target/release/fpp2}"
 PYTHON_HEADLESS="python3 $SCRIPT_DIR/fpp_headless.py"
 ITERATIONS=5
 MODE="compare"  # compare | rust-only
@@ -45,7 +45,7 @@ while [[ $# -gt 0 ]]; do
             echo "  --rust-only   Only measure Rust binary"
             echo ""
             echo "Environment:"
-            echo "  FPP_BINARY    Path to Rust binary (default: target/release/fpp)"
+            echo "  FPP_BINARY    Path to Rust binary (default: target/release/fpp2)"
             exit 0
             ;;
         *) echo "Unknown option: $1"; exit 1 ;;

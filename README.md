@@ -1,6 +1,6 @@
-# fpp — Fast PathPicker
+# fpp2 -- Fast PathPicker 2
 
-A high-performance Rust rewrite of Facebook's [PathPicker](https://github.com/facebook/PathPicker). Drop-in replacement for the original `fpp` command.
+A high-performance Rust drop-in replacement for Facebook's [PathPicker](https://github.com/facebook/PathPicker). Install `fpp2` and use it anywhere you used `fpp`.
 
 - [Why a Rewrite?](#why-a-rewrite)
   - [Benchmarks](#benchmarks)
@@ -21,10 +21,10 @@ A high-performance Rust rewrite of Facebook's [PathPicker](https://github.com/fa
 
 ## Why a Rewrite?
 
-The [original PathPicker](https://github.com/facebook/PathPicker) is a Python script that spawns multiple subprocesses (bash wrapper → Python parser → pickle → Python UI → bash executor). This Rust rewrite:
+The [original PathPicker](https://github.com/facebook/PathPicker) is a Python script that spawns multiple subprocesses (bash wrapper -> Python parser -> pickle -> Python UI -> bash executor). This Rust rewrite:
 
 - Single ~4MB binary with zero runtime dependencies
-- Single-process architecture — no intermediate serialization, no subprocess chain
+- Single-process architecture -- no intermediate serialization, no subprocess chain
 - 2-3x faster end-to-end, startup under 30ms
 
 ### Benchmarks
@@ -75,33 +75,33 @@ All CLI arguments, keyboard shortcuts, environment variables, and regex patterns
 
 Known differences (non-breaking):
 
-- Short flags: `-nfc`, `-ai`, `-ni`, `-ko` (original) and `--nfc`, `--ai`, `--ni`, `--ko` (added) — both work
-- State files use JSON instead of Python pickle — run `--clean` to reset when switching from the original
-- Single-process — the original's bash wrapper (`fpp` shell script) is not needed
+- Short flags: `-nfc`, `-ai`, `-ni`, `-ko` (original) and `--nfc`, `--ai`, `--ni`, `--ko` (added) -- both work
+- State files use JSON instead of Python pickle -- run `--clean` to reset when switching from the original
+- Single-process -- the original's bash wrapper (`fpp` shell script) is not needed
 
 ## Examples
 
-PathPicker accepts a wide variety of input — output from `git`, `grep`, `find`, and any other command — and presents matching file paths in an interactive terminal UI for selection.
+fpp2 accepts a wide variety of input -- output from `git`, `grep`, `find`, and any other command -- and presents matching file paths in an interactive terminal UI for selection.
 
 ```bash
-git status | fpp
-git grep "FooBar" | fpp
-grep -r "FooBar" . | fpp
-git diff HEAD~1 --stat | fpp
-find . -iname "*.js" | fpp
+git status | fpp2
+git grep "FooBar" | fpp2
+grep -r "FooBar" . | fpp2
+git diff HEAD~1 --stat | fpp2
+find . -iname "*.js" | fpp2
 ```
 
 Selected files are opened in `$EDITOR` by default. Press `c` during selection to enter command mode, or specify a command upfront:
 
 ```bash
 # Stage selected files
-git status | fpp -c "git add"
+git status | fpp2 -c "git add"
 
 # Delete selected temp files
-find . -name "*.tmp" | fpp -c "rm"
+find . -name "*.tmp" | fpp2 -c "rm"
 
 # Use $F to place filenames mid-command
-git log --oneline | fpp -c 'git show $F'
+git log --oneline | fpp2 -c 'git show $F'
 ```
 
 ## Installation
@@ -112,7 +112,7 @@ git log --oneline | fpp -c 'git show $F'
 git clone https://github.com/user/fast-path-picker.git
 cd fast-path-picker
 make build      # release build with LTO
-make install    # installs to ~/.cargo/bin/fpp
+make install    # installs to ~/.cargo/bin/fpp2
 ```
 
 ### With Cargo
@@ -173,7 +173,7 @@ Custom key bindings: `~/.cache/fpp/.fpp.keys` (INI format, `[bindings]` section)
 
 ### Editor Integration
 
-fpp detects your editor and formats arguments with line numbers accordingly:
+fpp2 detects your editor and formats arguments with line numbers accordingly:
 
 | Editor | Format | Example |
 |--------|--------|---------|
@@ -189,8 +189,8 @@ Paths with spaces are automatically quoted. `FPP_DISABLE_SPLIT` opens each file 
 Treat every line as selectable, even if it doesn't look like a file path:
 
 ```bash
-git branch | fpp -ai -nfc -c "git checkout"
-echo -e "option1\noption2\noption3" | fpp -ai -nfc
+git branch | fpp2 -ai -nfc -c "git checkout"
+echo -e "option1\noption2\noption3" | fpp2 -ai -nfc
 ```
 
 ### Non-Interactive Mode
@@ -198,7 +198,7 @@ echo -e "option1\noption2\noption3" | fpp -ai -nfc
 Execute a command without showing the UI (selects all matched files automatically):
 
 ```bash
-git status | fpp -ni -c "git add"
+git status | fpp2 -ni -c "git add"
 ```
 
 ### Keep-Open Mode
@@ -206,8 +206,8 @@ git status | fpp -ni -c "git add"
 Re-run the selection loop after each command execution:
 
 ```bash
-git status | fpp -ko -c "git add"
-# After each selection, fpp returns to the UI until you press Ctrl-C
+git status | fpp2 -ko -c "git add"
+# After each selection, fpp2 returns to the UI until you press Ctrl-C
 ```
 
 ## Development

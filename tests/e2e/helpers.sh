@@ -31,7 +31,7 @@ FAIL=0
 SKIP=0
 
 # Binaries
-RUST_BINARY="${FPP_BINARY:-$PROJECT_ROOT/target/release/fpp}"
+RUST_BINARY="${FPP_BINARY:-$PROJECT_ROOT/target/release/fpp2}"
 PYTHON_HEADLESS="python3 $SCRIPT_DIR/fpp_headless.py"
 MODE="compare"  # compare | rust-only | update-snapshots
 
@@ -56,7 +56,7 @@ for arg in "$@"; do
             echo "  --suite=NAME        Run only the named suite (e.g. --suite=01_basic_parsing)"
             echo ""
             echo "Environment:"
-            echo "  FPP_BINARY          Path to the binary to test (default: target/release/fpp)"
+            echo "  FPP_BINARY          Path to the binary to test (default: target/release/fpp2)"
             exit 0
             ;;
     esac

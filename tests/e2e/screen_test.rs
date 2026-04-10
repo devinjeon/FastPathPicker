@@ -153,7 +153,7 @@ fn extract_rows_from_buf(buf: &[u8], width: u16, height: u16) -> (Vec<String>, V
 /// Render the controller to a virtual terminal and extract rows.
 /// Returns (text_rows, attribute_rows).
 fn render_to_vt100(
-    lines: Vec<fpp::line::Line>,
+    lines: Vec<fpp2::line::Line>,
     match_indices: Vec<usize>,
     char_inputs: &[&str],
     screen_config: (u16, u16), // (width, height)
@@ -163,7 +163,7 @@ fn render_to_vt100(
 ) -> (Vec<String>, Vec<String>) {
     let (width, height) = screen_config;
 
-    let mut ctrl = fpp::ui::controller::Controller::new(
+    let mut ctrl = fpp2::ui::controller::Controller::new(
         lines,
         match_indices,
         preset_command,
@@ -195,7 +195,7 @@ fn render_to_vt100(
 /// capture (Python's getch() is called before the first render in the loop).
 /// So index 0 = after 1st key, index 1 = after 2nd key, etc.
 fn render_to_vt100_with_history(
-    lines: Vec<fpp::line::Line>,
+    lines: Vec<fpp2::line::Line>,
     match_indices: Vec<usize>,
     char_inputs: &[&str],
     screen_config: (u16, u16),
@@ -205,7 +205,7 @@ fn render_to_vt100_with_history(
 ) -> Vec<(Vec<String>, Vec<String>)> {
     let (width, height) = screen_config;
 
-    let mut ctrl = fpp::ui::controller::Controller::new(
+    let mut ctrl = fpp2::ui::controller::Controller::new(
         lines,
         match_indices,
         preset_command,
@@ -351,8 +351,8 @@ impl Default for ScreenTestCase {
 fn run_screen_test(tc: &ScreenTestCase) {
     let raw_lines = read_input_file(tc.input_file);
     let lines =
-        fpp::input::get_line_objs_from_lines(&raw_lines, tc.validate_file_exists, tc.all_input);
-    let match_indices = fpp::input::get_matches(&lines);
+        fpp2::input::get_line_objs_from_lines(&raw_lines, tc.validate_file_exists, tc.all_input);
+    let match_indices = fpp2::input::get_matches(&lines);
 
     let (text_rows, _attr_rows) = if let Some(ref indices) = tc.past_screens {
         // Render with history and concatenate requested screen states

@@ -1,6 +1,6 @@
 //! Integration tests for piped stdin handling.
 //!
-//! Verifies that the fpp binary correctly handles piped input
+//! Verifies that the fpp2 binary correctly handles piped input
 //! and produces expected output scripts. This was broken before
 //! enabling crossterm's `use-dev-tty` feature and adding dup2
 //! stdin redirect to /dev/tty.
@@ -17,7 +17,7 @@ fn fpp_binary() -> std::path::PathBuf {
         .parent()
         .unwrap()
         .to_path_buf();
-    path.push("fpp");
+    path.push("fpp2");
     path
 }
 
