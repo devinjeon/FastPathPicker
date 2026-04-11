@@ -1,12 +1,12 @@
 use std::collections::VecDeque;
-use std::io::{self, Write};
+use std::io::{self, BufWriter, Write};
 use std::time::Duration;
 
 use anyhow::Result;
 use crossterm::{
     cursor,
     event::{self, Event, KeyCode, KeyEvent, KeyModifiers},
-    execute,
+    execute, queue,
     style::{self, Attribute, Color, SetAttribute, SetBackgroundColor, SetForegroundColor},
     terminal::{self, ClearType},
 };
@@ -32,6 +32,19 @@ enum Mode {
     Warning,
 }
 
+/// Result of processing a single event in the event loop.
+///
+/// Transport errors (e.g., `event::read` failure) propagate via the outer `Result`
+/// of `process_event()`. Application-level exit results (e.g., from `execute_selection`)
+/// are wrapped in `Exit`.
+#[must_use]
+enum LoopAction {
+    /// Continue the event loop.
+    Continue,
+    /// Exit the event loop with the given result.
+    Exit(Result<()>),
+}
+
 /// Main UI controller. Manages the interactive selection interface.
 pub struct Controller {
     lines: Vec<Line>,
@@ -43,11 +56,20 @@ pub struct Controller {
     preset_command: Option<String>,
     execute_keys_queue: VecDeque<KeyEvent>,
     dirty: bool,
+    /// Line indices that need re-rendering (dirty line tracking).
+    /// Accumulated across coalesced events. Only used for partial redraw when
+    /// `partial_redraw_ok` is true.
+    dirty_lines: Vec<usize>,
+    /// True when all pending changes are pure hover moves (safe for partial redraw).
+    /// Set to false by any action requiring full redraw (selection, mode, scroll, resize).
+    partial_redraw_ok: bool,
     custom_bindings: Vec<KeyBinding>,
     all_input: bool,
     show_description: bool,
     /// Override terminal size for testing. None = use terminal::size().
     viewport_size: Option<(u16, u16)>,
+    /// Cached terminal size. Updated on resize events to avoid repeated ioctl calls.
+    cached_size: (u16, u16),
 }
 
 impl Controller {
@@ -74,10 +96,13 @@ impl Controller {
             preset_command,
             execute_keys_queue: VecDeque::from(keys_queue),
             dirty: true,
+            dirty_lines: Vec::new(),
+            partial_redraw_ok: false,
             custom_bindings: keybindings::read_key_bindings(),
             all_input,
             show_description: false,
             viewport_size: None,
+            cached_size: terminal::size().unwrap_or((80, 24)),
         };
 
         if initial_select_all {
@@ -96,10 +121,14 @@ impl Controller {
         self.viewport_size = Some((width, height));
     }
 
-    /// Get the effective terminal size, using override if set.
+    /// Get the effective terminal size, using override or cache.
     fn get_size(&self) -> (u16, u16) {
-        self.viewport_size
-            .unwrap_or_else(|| terminal::size().unwrap_or((80, 24)))
+        self.viewport_size.unwrap_or(self.cached_size)
+    }
+
+    /// Refresh cached terminal size (called on resize events).
+    fn refresh_size(&mut self) {
+        self.cached_size = terminal::size().unwrap_or((80, 24));
     }
 
     /// Run the interactive UI loop. Returns when the user makes a selection or quits.
@@ -109,11 +138,23 @@ impl Controller {
             return Ok(());
         }
 
-        terminal::enable_raw_mode()?;
         let mut stdout = io::stdout();
+        terminal::enable_raw_mode()?;
         execute!(stdout, terminal::EnterAlternateScreen, cursor::Hide,)?;
 
-        let result = self.event_loop(&mut stdout);
+        // Wrap stdout in BufWriter to batch terminal writes, reducing syscalls.
+        // 16KB buffer is large enough to hold a full screen render in most cases.
+        // We explicitly flush and drop the BufWriter before cleanup to ensure no
+        // stale data is written after terminal restoration.
+        let result = {
+            let mut buf_stdout = BufWriter::with_capacity(16 * 1024, &mut stdout);
+            let r = self.event_loop(&mut buf_stdout);
+            // Flush any remaining buffered data before we leave the alternate screen.
+            let _ = buf_stdout.flush();
+            // Drop the BufWriter so `stdout` is no longer borrowed.
+            drop(buf_stdout);
+            r
+        };
 
         execute!(stdout, cursor::Show, terminal::LeaveAlternateScreen,)?;
         terminal::disable_raw_mode()?;
@@ -121,7 +162,7 @@ impl Controller {
         result
     }
 
-    fn event_loop(&mut self, stdout: &mut io::Stdout) -> Result<()> {
+    fn event_loop(&mut self, stdout: &mut impl Write) -> Result<()> {
         // Process any queued execute-keys first
         while let Some(key) = self.execute_keys_queue.pop_front() {
             match self.handle_key(key)? {
@@ -129,13 +170,11 @@ impl Controller {
                     self.dirty = true;
                 }
                 Action::Quit => {
-                    // Python: output_nothing() then save selection then exit
                     output::output_nothing()?;
                     self.save_selection()?;
                     return Ok(());
                 }
                 Action::SilentQuit => {
-                    // Python Ctrl-C: sys.exit(0) — no script, no selection save
                     return Ok(());
                 }
                 Action::Execute => {
@@ -146,39 +185,82 @@ impl Controller {
 
         loop {
             if self.dirty {
-                let size = terminal::size()?;
-                self.render_to(stdout, size)?;
+                let size = self.get_size();
+                if self.partial_redraw_ok && !self.dirty_lines.is_empty() {
+                    // Partial redraw: only re-render dirty lines (no flicker).
+                    // Dedup here at the caller so render_dirty_lines receives a
+                    // clean list and doesn't render the same line twice.
+                    let mut dirty = std::mem::take(&mut self.dirty_lines);
+                    dirty.sort_unstable();
+                    dirty.dedup();
+                    self.render_dirty_lines(stdout, size, &dirty)?;
+                } else {
+                    self.render_to(stdout, size)?;
+                }
                 self.dirty = false;
+                self.partial_redraw_ok = true; // reset for next event batch
+                self.dirty_lines.clear();
             }
 
-            if event::poll(Duration::from_millis(100))? {
-                match event::read()? {
-                    Event::Key(key) => {
-                        match self.handle_key(key)? {
-                            Action::Continue => {}
-                            Action::Quit => {
-                                // Python: output_nothing() then save selection then exit
-                                output::output_nothing()?;
-                                self.save_selection()?;
-                                return Ok(());
-                            }
-                            Action::SilentQuit => {
-                                // Python Ctrl-C: sys.exit(0) — no script, no selection save
-                                return Ok(());
-                            }
-                            Action::Execute => {
-                                return self.execute_selection();
-                            }
-                        }
-                        self.dirty = true;
+            // Block until the first event arrives (no busy-spin, no artificial delay).
+            // Once we have one event, immediately drain any queued events below.
+            if event::poll(Duration::from_secs(1))? {
+                if let LoopAction::Exit(result) = self.process_event()? {
+                    return result;
+                }
+
+                // Drain pending events to coalesce rapid key presses into a single
+                // render. poll(ZERO) is non-blocking so this adds negligible latency.
+                // Capped at 64 to guard against runaway event streams.
+                for _ in 0..64 {
+                    if !event::poll(Duration::ZERO)? {
+                        break;
                     }
-                    Event::Resize(_, _) => {
-                        self.dirty = true;
+                    if let LoopAction::Exit(result) = self.process_event()? {
+                        return result;
                     }
-                    _ => {}
                 }
             }
         }
+    }
+
+    /// Process a single event from the crossterm event queue.
+    fn process_event(&mut self) -> Result<LoopAction> {
+        match event::read()? {
+            Event::Key(key) => {
+                // Remember dirty_lines count before handling key.
+                // If move_hover adds entries, this was a pure hover move.
+                // Otherwise, it was a different action needing full redraw.
+                let dirty_before = self.dirty_lines.len();
+                match self.handle_key(key)? {
+                    Action::Continue => {}
+                    Action::Quit => {
+                        output::output_nothing()?;
+                        self.save_selection()?;
+                        return Ok(LoopAction::Exit(Ok(())));
+                    }
+                    Action::SilentQuit => {
+                        return Ok(LoopAction::Exit(Ok(())));
+                    }
+                    Action::Execute => {
+                        return Ok(LoopAction::Exit(self.execute_selection()));
+                    }
+                }
+                self.dirty = true;
+                // If handle_key didn't add dirty_lines, it wasn't a pure hover
+                // move — force full redraw by invalidating partial_redraw_ok.
+                if self.dirty_lines.len() == dirty_before {
+                    self.partial_redraw_ok = false;
+                }
+            }
+            Event::Resize(_, _) => {
+                self.refresh_size();
+                self.dirty = true;
+                self.partial_redraw_ok = false;
+            }
+            _ => {}
+        }
+        Ok(LoopAction::Continue)
     }
 
     pub fn handle_key(&mut self, key: KeyEvent) -> Result<Action> {
@@ -432,66 +514,129 @@ impl Controller {
         if self.match_indices.is_empty() {
             return;
         }
+        let old_hover = self.hover_index;
+        let old_scroll = self.scroll_offset;
+
         let len = self.match_indices.len() as isize;
         let new_idx = ((self.hover_index as isize + delta) % len + len) % len;
         self.hover_index = new_idx as usize;
         self.show_description = false;
-        self.adjust_scroll();
-    }
+        self.update_scroll_offset();
 
-    fn page_down(&mut self) {
-        let (width, height) = self.get_size();
-        let chrome = Chrome::new(width, height);
-        let page = (chrome.content_height as usize) / 2;
-        self.move_hover(page as isize);
-    }
-
-    fn page_up(&mut self) {
-        let (width, height) = self.get_size();
-        let chrome = Chrome::new(width, height);
-        let page = (chrome.content_height as usize) / 2;
-        self.move_hover(-(page as isize));
-    }
-
-    fn jump_to_first(&mut self) {
-        self.hover_index = 0;
-        self.adjust_scroll();
-    }
-
-    fn jump_to_last(&mut self) {
-        if !self.match_indices.is_empty() {
-            self.hover_index = self.match_indices.len() - 1;
+        if self.scroll_offset == old_scroll {
+            // No scroll: only redraw the old and new hover lines.
+            self.dirty_lines.push(self.match_indices[old_hover]);
+            self.dirty_lines.push(self.match_indices[self.hover_index]);
+        } else {
+            // Scroll changed: mark ALL visible lines as dirty for partial redraw.
+            // This uses space-padding (no ClearType) so we avoid flicker, while
+            // still updating every line that shifted. Much smoother than a full
+            // clear-then-redraw cycle.
+            let (width, height) = self.get_size();
+            let chrome = Chrome::new(width, height);
+            let viewport_end =
+                (self.scroll_offset + chrome.content_height as usize).min(self.lines.len());
+            for line_idx in self.scroll_offset..viewport_end {
+                self.dirty_lines.push(line_idx);
+            }
         }
-        self.adjust_scroll();
     }
 
-    fn adjust_scroll(&mut self) {
-        // Port of Python's update_scroll_offset: center-scroll with leeway.
-        // Centers the viewport on the hovered line, but only repositions
-        // when the current offset has drifted more than 1/4 window height
-        // from the desired center (or when the hovered line is off-screen).
+    /// Page down by half the viewport height.
+    /// Does NOT add dirty_lines — `process_event` detects this and triggers full redraw.
+    fn page_down(&mut self) {
+        if self.match_indices.is_empty() {
+            return;
+        }
+        let (width, height) = self.get_size();
+        let chrome = Chrome::new(width, height);
+        let page = (chrome.content_height as usize) / 2;
+        let len = self.match_indices.len() as isize;
+        let new_idx = ((self.hover_index as isize + page as isize) % len + len) % len;
+        self.hover_index = new_idx as usize;
+        self.show_description = false;
+        self.update_scroll_offset();
+    }
+
+    /// Page up by half the viewport height.
+    /// Does NOT add dirty_lines — `process_event` detects this and triggers full redraw.
+    fn page_up(&mut self) {
+        if self.match_indices.is_empty() {
+            return;
+        }
+        let (width, height) = self.get_size();
+        let chrome = Chrome::new(width, height);
+        let page = (chrome.content_height as usize) / 2;
+        let len = self.match_indices.len() as isize;
+        let new_idx = ((self.hover_index as isize - page as isize) % len + len) % len;
+        self.hover_index = new_idx as usize;
+        self.show_description = false;
+        self.update_scroll_offset();
+    }
+
+    /// Jump to the first match. Intentionally does NOT add dirty_lines — this
+    /// causes `process_event` to detect no new dirty entries and set
+    /// `partial_redraw_ok = false`, triggering a full redraw via `render_to`.
+    fn jump_to_first(&mut self) {
+        if self.match_indices.is_empty() {
+            return;
+        }
+        self.hover_index = 0;
+        self.show_description = false;
+        self.update_scroll_offset();
+    }
+
+    /// Jump to the last match. See `jump_to_first` for why dirty_lines is not modified.
+    fn jump_to_last(&mut self) {
+        if self.match_indices.is_empty() {
+            return;
+        }
+        self.hover_index = self.match_indices.len() - 1;
+        self.show_description = false;
+        self.update_scroll_offset();
+    }
+
+    /// Scroll offset update matching Python's `update_scroll_offset` exactly.
+    /// Centers the viewport on the hovered line, but only repositions when
+    /// the current offset differs from the desired position by more than
+    /// half_height/2 (the "leeway" check), or when the hovered line would
+    /// be off-screen.
+    fn update_scroll_offset(&mut self) {
         let (width, height) = self.get_size();
         let chrome = Chrome::new(width, height);
         let window_height = chrome.content_height as usize;
-        let half_height = window_height.div_ceil(2);
+        if window_height == 0 {
+            return;
+        }
 
+        // Python 3's round() uses banker's rounding (round half to even).
+        // Rust's f64::round() always rounds half away from zero.
+        // Use round_ties_even() to match Python's behavior exactly.
+        let half_height = (window_height as f64 / 2.0).round_ties_even() as usize;
         let hovered_line_idx = self.match_indices[self.hover_index];
 
-        // Python uses negative offset; we use positive. Equivalent logic:
-        // desired_top_row = max(hovered_line_idx - half_height, 0)
-        let desired_top_row = hovered_line_idx.saturating_sub(half_height);
+        // Python: desired_top_row = hovered.get_screen_index() - half_height
+        // Python uses negative scroll_offset; we use positive scroll_offset
+        // (which equals the desired top row).
+        let desired_top = hovered_line_idx.saturating_sub(half_height);
+
         let old_offset = self.scroll_offset;
 
-        // Python condition: abs(new_offset - old_offset) > half_height / 2
-        //   or self.hover_index + old_offset < 0
-        // In Python, scroll_offset is negative. Converting to Rust positive offset:
-        // - drift = abs(desired_top_row - old_offset)
-        // - hover_index < old_offset (match index vs scroll position, Python quirk)
-        let drift = desired_top_row.abs_diff(old_offset);
-        let hover_before_viewport = self.hover_index < old_offset;
+        // Python leeway: only reposition if the difference exceeds half_height/2
+        // or if the hovered line would be above the viewport.
+        let diff = desired_top.abs_diff(old_offset);
 
-        if drift > half_height / 2 || hover_before_viewport {
-            self.scroll_offset = desired_top_row;
+        // Python: `self.hover_index + old_offset < 0` where old_offset is negative.
+        // In Rust terms: hover_index (match index) < scroll_offset (positive).
+        // This is a heuristic that detects when the viewport has scrolled far
+        // past the current match position.
+        let python_guard = (self.hover_index as isize) < (old_offset as isize);
+        // Also ensure the hovered line is actually visible in the viewport.
+        let hovered_offscreen =
+            hovered_line_idx < old_offset || hovered_line_idx >= old_offset + window_height;
+
+        if diff > half_height / 2 || python_guard || hovered_offscreen {
+            self.scroll_offset = desired_top;
         }
     }
 
@@ -588,6 +733,327 @@ impl Controller {
 
     // --- Rendering ---
 
+    /// Partial redraw: re-render only the specified dirty lines.
+    /// Like Python's process_dirty() with dirty_indexes — only redraws lines whose
+    /// hover/selection state changed, avoiding full-screen redraw on j/k navigation.
+    /// When many lines are dirty (e.g., after scrolling), this still avoids the
+    /// flicker of ClearType::All by using space-padding on each line.
+    fn render_dirty_lines(
+        &self,
+        writer: &mut impl Write,
+        (width, height): (u16, u16),
+        dirty_line_indices: &[usize],
+    ) -> Result<()> {
+        let chrome = Chrome::new(width, height);
+        let scrollbar = ScrollBar::new(self.lines.len(), height as usize);
+        let has_scrollbar = scrollbar.is_active();
+        let in_xmode = self.mode == Mode::QuickSelect;
+        let text_width = chrome.text_width(has_scrollbar, in_xmode) as usize;
+        let sb_range = scrollbar.calculate(self.scroll_offset);
+        let hovered_line_idx = self.match_indices.get(self.hover_index).copied();
+        let viewport_end =
+            (self.scroll_offset + chrome.content_height as usize).min(self.lines.len());
+
+        // Track whether we redrew a significant portion (scroll happened).
+        // If so, also update the scrollbar on empty rows.
+        let content_rows = viewport_end - self.scroll_offset;
+        // dirty_line_indices is already deduped by the caller (event_loop).
+        let is_full_viewport_dirty = dirty_line_indices.len() >= content_rows.max(1);
+
+        // Pre-allocate padding buffer once for all lines in this render pass.
+        let padding_cache = " ".repeat(text_width);
+
+        for &line_idx in dirty_line_indices {
+            // Skip lines outside the visible viewport
+            if line_idx < self.scroll_offset || line_idx >= viewport_end {
+                continue;
+            }
+            let row = line_idx - self.scroll_offset;
+            self.render_content_line(
+                writer,
+                &chrome,
+                row,
+                line_idx,
+                has_scrollbar,
+                in_xmode,
+                text_width,
+                &sb_range,
+                hovered_line_idx,
+                true, // space-padding for partial redraws (no flicker)
+                &padding_cache,
+            )?;
+        }
+
+        // When the whole viewport scrolled, update scrollbar + empty rows.
+        if is_full_viewport_dirty {
+            for row in content_rows..height as usize {
+                queue!(
+                    writer,
+                    cursor::MoveTo(0, row as u16),
+                    terminal::Clear(ClearType::UntilNewLine)
+                )?;
+                if has_scrollbar {
+                    if let Some(ref range) = sb_range {
+                        let sb_str = scrollbar::render_scrollbar_row(row, range);
+                        queue!(writer, style::Print(sb_str))?;
+                    }
+                    queue!(writer, cursor::MoveTo(4, row as u16), style::Print(" "))?;
+                }
+                if in_xmode && row < (height as usize).saturating_sub(1) {
+                    if let Some(label) = quick_select::get_label(row) {
+                        queue!(
+                            writer,
+                            cursor::MoveTo(0, row as u16),
+                            style::Print(label.to_string()),
+                        )?;
+                    }
+                }
+            }
+        }
+
+        // Only update the info area when something actually changed:
+        // - Full viewport dirty (scroll happened, scrollbar position changed)
+        // - Wide mode: always update because the sidebar border must be maintained
+        //   and descriptions need to be cleared when show_description transitions
+        //   from true to false. The BufWriter makes these extra writes negligible.
+        // In narrow mode during simple hover, the usage text is static so
+        // re-rendering it just causes unnecessary writes (and potential flicker
+        // in SSH/tmux).
+        if is_full_viewport_dirty || chrome.is_wide {
+            self.render_info(writer, &chrome, height)?;
+        }
+
+        writer.flush()?;
+        Ok(())
+    }
+
+    /// Render a single content line at the given row.
+    /// Extracted to share rendering logic between full render and partial dirty-line render.
+    /// When `use_space_padding` is true, stale content is overwritten with spaces instead
+    /// of ClearType::UntilNewLine, preventing flicker during partial redraws.
+    /// `padding_cache` is a pre-allocated spaces buffer (at least `text_width` long) to
+    /// avoid per-line allocation when space-padding.
+    #[allow(clippy::too_many_arguments)]
+    fn render_content_line(
+        &self,
+        writer: &mut impl Write,
+        chrome: &Chrome,
+        row: usize,
+        line_idx: usize,
+        has_scrollbar: bool,
+        in_xmode: bool,
+        text_width: usize,
+        sb_range: &Option<scrollbar::ScrollBarRange>,
+        hovered_line_idx: Option<usize>,
+        use_space_padding: bool,
+        padding_cache: &str,
+    ) -> Result<()> {
+        let line = &self.lines[line_idx];
+        let is_hovered = hovered_line_idx == Some(line_idx);
+
+        queue!(writer, cursor::MoveTo(0, row as u16))?;
+
+        // Scrollbar
+        let screen_row = row;
+        if has_scrollbar {
+            if let Some(ref range) = sb_range {
+                let sb_str = scrollbar::render_scrollbar_row(screen_row, range);
+                queue!(writer, style::Print(sb_str))?;
+            }
+            queue!(writer, cursor::MoveTo(4, row as u16), style::Print(" "))?;
+        }
+
+        // Quick-select labels
+        if in_xmode {
+            if let Some(label) = quick_select::get_label(row) {
+                queue!(
+                    writer,
+                    cursor::MoveTo(0, row as u16),
+                    style::Print(label.to_string()),
+                )?;
+            }
+            if !has_scrollbar {
+                let content_x = chrome.content_start_x(has_scrollbar, in_xmode);
+                queue!(writer, cursor::MoveTo(content_x, row as u16))?;
+            }
+        }
+
+        // Line content — track printed columns for space-padding (no ClearType needed).
+        let is_selected = line.as_match().is_some_and(|m| m.selected);
+        let mut printed_cols: usize = 0;
+
+        if let Some(m) = line.as_match() {
+            let plain = m.formatted_text.plain_text();
+            let plain_len = plain.chars().count();
+            let ms = m.match_start.min(plain_len);
+            let me = m.match_end.min(plain_len);
+
+            let (before_raw, rest_raw) = m.formatted_text.breakat(ms);
+            let (_matched_raw, after_raw) = {
+                let rest_ft = crate::format::FormattedText::new(&rest_raw);
+                let match_len = me - ms;
+                rest_ft.breakat(match_len)
+            };
+
+            let before_plain: String = plain.chars().take(ms).collect();
+            let matched_plain: String = plain.chars().skip(ms).take(me - ms).collect();
+            let after_plain: String = plain.chars().skip(me).collect();
+
+            let arrow = if is_selected { "|===>" } else { "" };
+            let max_len = text_width;
+
+            let combined = format!("{arrow}{matched_plain}");
+            let important_len = before_plain.chars().count() + combined.chars().count();
+            let is_truncated = important_len > max_len;
+            let truncated_combined;
+            if is_truncated {
+                let space_allowed = max_len
+                    .saturating_sub(TRUNCATE_DECORATOR.len())
+                    .saturating_sub(arrow.len())
+                    .saturating_sub(before_plain.chars().count());
+                if space_allowed > 1 {
+                    let mid = space_allowed / 2;
+                    let combined_chars: Vec<char> = combined.chars().collect();
+                    let total = combined_chars.len();
+                    let begin: String = combined_chars[..mid].iter().collect();
+                    let end: String = combined_chars[total.saturating_sub(mid)..].iter().collect();
+                    truncated_combined = format!("{begin}{TRUNCATE_DECORATOR}{end}");
+                } else {
+                    truncated_combined = combined;
+                }
+            } else {
+                truncated_combined = combined;
+            }
+
+            let before_display = if m.formatted_text.has_ansi() {
+                let ft = crate::format::FormattedText::new(&before_raw);
+                ft.raw_truncated(max_len)
+            } else {
+                before_plain.chars().take(max_len).collect::<String>()
+            };
+            let before_printed = if m.formatted_text.has_ansi() {
+                crate::format::FormattedText::new(&before_display)
+                    .plain_text()
+                    .chars()
+                    .count()
+            } else {
+                before_display.chars().count()
+            };
+            queue!(writer, style::Print(&before_display))?;
+            printed_cols += before_printed;
+            if m.formatted_text.has_ansi() {
+                queue!(writer, style::Print("\x1b[0m"))?;
+            }
+
+            if is_hovered && m.selected {
+                queue!(
+                    writer,
+                    SetBackgroundColor(Color::Red),
+                    SetForegroundColor(Color::White),
+                    SetAttribute(Attribute::Bold),
+                )?;
+            } else if is_hovered {
+                queue!(
+                    writer,
+                    SetBackgroundColor(Color::Blue),
+                    SetForegroundColor(Color::White),
+                    SetAttribute(Attribute::Bold),
+                )?;
+            } else if m.selected {
+                queue!(
+                    writer,
+                    SetBackgroundColor(Color::Green),
+                    SetForegroundColor(Color::White),
+                    SetAttribute(Attribute::Bold),
+                )?;
+            } else if !self.all_input {
+                queue!(writer, SetAttribute(Attribute::Underlined))?;
+            }
+
+            let remaining = max_len.saturating_sub(before_printed);
+            let match_display: String = truncated_combined.chars().take(remaining).collect();
+            let match_printed = match_display.chars().count();
+            queue!(writer, style::Print(&match_display))?;
+            printed_cols += match_printed;
+
+            queue!(
+                writer,
+                SetBackgroundColor(Color::Reset),
+                SetForegroundColor(Color::Reset),
+                SetAttribute(Attribute::Reset),
+            )?;
+
+            let after_remaining = remaining.saturating_sub(match_printed);
+            if after_remaining > 0 {
+                let after_display = if m.formatted_text.has_ansi() {
+                    let ft = crate::format::FormattedText::new(&after_raw);
+                    let result = ft.raw_truncated(after_remaining);
+                    format!("{result}\x1b[0m")
+                } else {
+                    after_plain
+                        .chars()
+                        .take(after_remaining)
+                        .collect::<String>()
+                };
+                let after_printed = if m.formatted_text.has_ansi() {
+                    crate::format::FormattedText::new(&after_display)
+                        .plain_text()
+                        .chars()
+                        .count()
+                } else {
+                    after_display.chars().count()
+                };
+                queue!(writer, style::Print(&after_display))?;
+                printed_cols += after_printed;
+            }
+        } else {
+            let ft = line.formatted_text();
+            let display = if ft.has_ansi() {
+                ft.raw_truncated(text_width)
+            } else {
+                ft.plain_text().chars().take(text_width).collect::<String>()
+            };
+            let display_len = if ft.has_ansi() {
+                crate::format::FormattedText::new(&display)
+                    .plain_text()
+                    .chars()
+                    .count()
+            } else {
+                display.chars().count()
+            };
+            queue!(writer, style::Print(&display))?;
+            printed_cols += display_len;
+        }
+
+        if use_space_padding {
+            // Pad remaining content area with spaces instead of ClearType::UntilNewLine.
+            // This prevents flicker because the terminal never shows a cleared gap.
+            let pad_count = text_width.saturating_sub(printed_cols);
+            debug_assert!(
+                pad_count <= padding_cache.len(),
+                "pad_count ({pad_count}) exceeds padding_cache length ({})",
+                padding_cache.len()
+            );
+            if pad_count > 0 {
+                // Slice from pre-allocated padding buffer (no allocation per line).
+                let end = pad_count.min(padding_cache.len());
+                queue!(writer, style::Print(&padding_cache[..end]))?;
+            }
+            // In wide mode, re-draw the sidebar border on this row.
+            if chrome.is_wide {
+                queue!(
+                    writer,
+                    cursor::MoveTo(chrome.content_width, row as u16),
+                    style::Print("|"),
+                )?;
+            }
+        } else {
+            // Full render: use ClearType::UntilNewLine for clean output.
+            queue!(writer, terminal::Clear(ClearType::UntilNewLine))?;
+        }
+        Ok(())
+    }
+
     /// Render to any writer with a given terminal size.
     /// Used by both the real event loop (with stdout) and tests (with Vec<u8>).
     pub fn render_to(&self, writer: &mut impl Write, (width, height): (u16, u16)) -> Result<()> {
@@ -595,15 +1061,16 @@ impl Controller {
 
         // Show cursor in command mode, hide otherwise
         if self.mode == Mode::Command {
-            execute!(writer, cursor::Show)?;
+            queue!(writer, cursor::Show)?;
         } else {
-            execute!(writer, cursor::Hide)?;
+            queue!(writer, cursor::Hide)?;
         }
 
-        execute!(writer, terminal::Clear(ClearType::All))?;
-
-        // Warning overlay: render and return (event_loop handles dismissal)
+        // Overlay modes (Warning/Command) use full-screen clear because they replace
+        // the entire screen content. Normal/QuickSelect modes use per-line clear
+        // (ClearType::UntilNewLine) to avoid flicker on j/k navigation.
         if self.mode == Mode::Warning {
+            queue!(writer, terminal::Clear(ClearType::All))?;
             self.render_preset_warning(writer, &chrome)?;
             self.render_info(writer, &chrome, height)?;
             writer.flush()?;
@@ -612,6 +1079,7 @@ impl Controller {
 
         // Command mode: show Python-style full-screen command entry UI
         if self.mode == Mode::Command {
+            queue!(writer, terminal::Clear(ClearType::All))?;
             self.render_command_mode(writer, width, height)?;
             self.render_info(writer, &chrome, height)?;
             writer.flush()?;
@@ -633,190 +1101,23 @@ impl Controller {
 
         let hovered_line_idx = self.match_indices.get(self.hover_index).copied();
 
+        // Empty padding cache — full redraws use ClearType::UntilNewLine, not space-padding.
+        let padding_cache = "";
+
         for (row, line_idx) in (self.scroll_offset..viewport_end).enumerate() {
-            let line = &self.lines[line_idx];
-            let is_hovered = hovered_line_idx == Some(line_idx);
-
-            execute!(writer, cursor::MoveTo(0, row as u16))?;
-
-            // Scrollbar (Python ASCII art style: 3-char strings at col 0-2,
-            // border space at col 4, content at col 5 = CHROME_MIN_X).
-            // Col 3 is intentionally left unwritten (matching Python's erase).
-            // Use screen_row (not viewport row) for scrollbar rendering,
-            // since Python draws scrollbar based on full screen position.
-            let screen_row = row;
-            if has_scrollbar {
-                if let Some(ref range) = sb_range {
-                    let sb_str = scrollbar::render_scrollbar_row(screen_row, range);
-                    execute!(writer, style::Print(sb_str))?;
-                }
-                // Border at col 4 (Python: output_border at x_pos + 4)
-                execute!(writer, cursor::MoveTo(4, row as u16), style::Print(" "),)?;
-            }
-
-            // Quick-select labels: Python renders at x=0 (overwriting first char)
-            if in_xmode {
-                if let Some(label) = quick_select::get_label(row) {
-                    execute!(
-                        writer,
-                        cursor::MoveTo(0, row as u16),
-                        style::Print(format!("{label}")),
-                    )?;
-                }
-                // Move cursor to content start (CHROME_MIN_X = 5)
-                if !has_scrollbar {
-                    let content_x = chrome.content_start_x(has_scrollbar, in_xmode);
-                    execute!(writer, cursor::MoveTo(content_x, row as u16))?;
-                }
-            }
-
-            // Line content: Python renders before_text + decorated_match + after_text
-            // Only the match portion gets color/underline attributes.
-            let is_selected = line.as_match().is_some_and(|m| m.selected);
-
-            if let Some(m) = line.as_match() {
-                let plain = m.formatted_text.plain_text();
-                let plain_len = plain.chars().count();
-                let ms = m.match_start.min(plain_len);
-                let me = m.match_end.min(plain_len);
-
-                // Use ANSI-aware splitting to preserve colors in before/after
-                let (before_raw, rest_raw) = m.formatted_text.breakat(ms);
-                let (_matched_raw, after_raw) = {
-                    let rest_ft = crate::format::FormattedText::new(&rest_raw);
-                    let match_len = me - ms;
-                    rest_ft.breakat(match_len)
-                };
-
-                let before_plain: String = plain.chars().take(ms).collect();
-                let mut matched_plain: String = plain.chars().skip(ms).take(me - ms).collect();
-                let after_plain: String = plain.chars().skip(me).collect();
-
-                let arrow = if is_selected { "|===>" } else { "" };
-                let arrow_len = arrow.len();
-                let max_len = text_width;
-
-                // Python: update_decorated_match(max_len) — if before_text + decorated_match
-                // exceeds available space, truncate the combined (arrow + match) with |...|
-                // and drop before_text for more room.
-                // Python's plain_text = decorator_text + match, and both begin/end are taken
-                // from this combined string, so the arrow is included in the truncation.
-                let combined = format!("{arrow}{matched_plain}");
-                let important_len = before_plain.chars().count() + combined.chars().count();
-                let is_truncated = important_len > max_len;
-                let truncated_combined;
-                if is_truncated {
-                    // Python: space_allowed = max_len - |...| - decorator_text - before_text
-                    let space_allowed = max_len
-                        .saturating_sub(TRUNCATE_DECORATOR.len())
-                        .saturating_sub(arrow.len())
-                        .saturating_sub(before_plain.chars().count());
-                    if space_allowed > 1 {
-                        let mid = space_allowed / 2;
-                        let combined_chars: Vec<char> = combined.chars().collect();
-                        let total = combined_chars.len();
-                        let begin: String = combined_chars[..mid].iter().collect();
-                        let end: String =
-                            combined_chars[total.saturating_sub(mid)..].iter().collect();
-                        truncated_combined = format!("{begin}{TRUNCATE_DECORATOR}{end}");
-                    } else {
-                        truncated_combined = combined;
-                    }
-                } else {
-                    truncated_combined = combined;
-                }
-
-                // Print before_text with ANSI preserved
-                // When truncated, before_text is still shown (Python includes it in space calc)
-                let before_display = if m.formatted_text.has_ansi() {
-                    let ft = crate::format::FormattedText::new(&before_raw);
-                    ft.raw_truncated(max_len)
-                } else {
-                    before_plain.chars().take(max_len).collect::<String>()
-                };
-                let before_printed = if m.formatted_text.has_ansi() {
-                    crate::format::FormattedText::new(&before_display)
-                        .plain_text()
-                        .chars()
-                        .count()
-                } else {
-                    before_display.chars().count()
-                };
-                execute!(writer, style::Print(&before_display))?;
-                // Reset after ANSI before_text to avoid color bleeding into match
-                if m.formatted_text.has_ansi() {
-                    execute!(writer, style::Print("\x1b[0m"))?;
-                }
-
-                // Set attributes for the match portion
-                if is_hovered && m.selected {
-                    execute!(
-                        writer,
-                        SetBackgroundColor(Color::Red),
-                        SetForegroundColor(Color::White),
-                        SetAttribute(Attribute::Bold),
-                    )?;
-                } else if is_hovered {
-                    execute!(
-                        writer,
-                        SetBackgroundColor(Color::Blue),
-                        SetForegroundColor(Color::White),
-                        SetAttribute(Attribute::Bold),
-                    )?;
-                } else if m.selected {
-                    execute!(
-                        writer,
-                        SetBackgroundColor(Color::Green),
-                        SetForegroundColor(Color::White),
-                        SetAttribute(Attribute::Bold),
-                    )?;
-                } else if !self.all_input {
-                    execute!(writer, SetAttribute(Attribute::Underlined))?;
-                }
-
-                // Print combined arrow+match (truncated if needed)
-                // Simple clipping at render time — Python clips via curses addstr.
-                let remaining = max_len.saturating_sub(before_printed);
-                let match_display: String = truncated_combined.chars().take(remaining).collect();
-                let match_printed = match_display.chars().count();
-                execute!(writer, style::Print(&match_display))?;
-
-                // Reset attributes
-                execute!(
-                    writer,
-                    SetBackgroundColor(Color::Reset),
-                    SetForegroundColor(Color::Reset),
-                    SetAttribute(Attribute::Reset),
-                )?;
-
-                // Print after_text with ANSI preserved
-                // Simple clipping (no |...| decorator) — matches Python's curses
-                // addstr which silently clips at the right edge of the screen.
-                let after_remaining = remaining.saturating_sub(match_printed);
-                if after_remaining > 0 {
-                    let after_display = if m.formatted_text.has_ansi() {
-                        let ft = crate::format::FormattedText::new(&after_raw);
-                        let result = ft.raw_truncated(after_remaining);
-                        format!("{result}\x1b[0m")
-                    } else {
-                        after_plain
-                            .chars()
-                            .take(after_remaining)
-                            .collect::<String>()
-                    };
-                    execute!(writer, style::Print(&after_display))?;
-                }
-            } else {
-                // SimpleLine: no attributes, just print with ANSI preservation
-                // Simple clipping at the right edge (matching Python's curses addstr)
-                let ft = line.formatted_text();
-                let display = if ft.has_ansi() {
-                    ft.raw_truncated(text_width)
-                } else {
-                    ft.plain_text().chars().take(text_width).collect::<String>()
-                };
-                execute!(writer, style::Print(&display))?;
-            }
+            self.render_content_line(
+                writer,
+                &chrome,
+                row,
+                line_idx,
+                has_scrollbar,
+                in_xmode,
+                text_width,
+                &sb_range,
+                hovered_line_idx,
+                false, // ClearType::UntilNewLine for full redraws
+                padding_cache,
+            )?;
         }
 
         // Draw scrollbar and x-mode labels for rows beyond content area
@@ -824,21 +1125,25 @@ impl Controller {
         {
             let content_rows = viewport_end - self.scroll_offset;
             for row in content_rows..height as usize {
-                execute!(writer, cursor::MoveTo(0, row as u16))?;
+                queue!(
+                    writer,
+                    cursor::MoveTo(0, row as u16),
+                    terminal::Clear(ClearType::UntilNewLine)
+                )?;
                 if has_scrollbar {
                     if let Some(ref range) = sb_range {
                         let sb_str = scrollbar::render_scrollbar_row(row, range);
-                        execute!(writer, style::Print(sb_str))?;
+                        queue!(writer, style::Print(sb_str))?;
                     }
-                    execute!(writer, cursor::MoveTo(4, row as u16), style::Print(" "),)?;
+                    queue!(writer, cursor::MoveTo(4, row as u16), style::Print(" "),)?;
                 }
                 // X-mode labels continue on empty rows (but not the last row = usage line)
                 if in_xmode && row < (height as usize).saturating_sub(1) {
                     if let Some(label) = quick_select::get_label(row) {
-                        execute!(
+                        queue!(
                             writer,
                             cursor::MoveTo(0, row as u16),
-                            style::Print(format!("{label}")),
+                            style::Print(label.to_string()),
                         )?;
                     }
                 }
@@ -862,7 +1167,7 @@ impl Controller {
             ScrollBar::new(self.lines.len(), chrome.content_height as usize).is_active();
         let x_start = if has_scrollbar { 5u16 } else { 0u16 };
 
-        execute!(
+        queue!(
             writer,
             cursor::MoveTo(x_start, y_start),
             SetBackgroundColor(Color::Red),
@@ -873,14 +1178,14 @@ impl Controller {
         )?;
 
         if let Some(ref cmd) = self.preset_command {
-            execute!(
+            queue!(
                 writer,
                 cursor::MoveTo(x_start, y_start + 1),
                 style::Print(format!("The command you provided was \"{cmd}\" ")),
             )?;
         }
 
-        execute!(
+        queue!(
             writer,
             cursor::MoveTo(x_start, y_start + 2),
             style::Print("Press any key to go back to selecting paths."),
@@ -921,8 +1226,11 @@ impl Controller {
 
         macro_rules! print_at {
             ($w:expr, $y:expr, $text:expr) => {
+                // Clippy suggests `$y > 0` but callers pass `$y - N` expressions
+                // where $y is i32, so `$y >= 0` is a meaningful negative-guard.
+                #[allow(clippy::int_plus_one)]
                 if $y >= 0 && $y < max_y {
-                    execute!($w, cursor::MoveTo(0, $y as u16), style::Print($text))?;
+                    queue!($w, cursor::MoveTo(0, $y as u16), style::Print($text))?;
                 }
             };
         }
@@ -945,7 +1253,7 @@ impl Controller {
         // Print command input line
         let input_y = begin_height + 3;
         if input_y >= 0 && input_y < max_y {
-            execute!(
+            queue!(
                 writer,
                 cursor::MoveTo(0, input_y as u16),
                 style::Print(&prompt_line),
@@ -962,9 +1270,18 @@ impl Controller {
         if chrome.is_wide {
             let border_x = chrome.content_width;
 
-            // Draw vertical border '|' (matching Python's HelperChrome)
+            // Clear sidebar area and draw vertical border '|' (matching Python's HelperChrome).
+            // Clearing from border_x prevents stale content when sidebar text shrinks
+            // (e.g., toggling description off).
+            // Clear(UntilNewLine) does not move the cursor, so we can print
+            // the border character immediately after clearing.
             for row in 0..height {
-                execute!(writer, cursor::MoveTo(border_x, row), style::Print("|"),)?;
+                queue!(
+                    writer,
+                    cursor::MoveTo(border_x, row),
+                    terminal::Clear(ClearType::UntilNewLine),
+                    style::Print("|"),
+                )?;
             }
 
             // Sidebar: show USAGE_PAGE or USAGE_COMMAND_PAGE (matching Python)
@@ -982,7 +1299,7 @@ impl Controller {
                 if row < height {
                     let truncated: String = line.chars().take(max_w).collect();
                     // Python: addstr(min_y + index, border_x + 2, usage_line)
-                    execute!(
+                    queue!(
                         writer,
                         cursor::MoveTo(border_x + 2, row),
                         style::Print(&truncated),
@@ -999,7 +1316,7 @@ impl Controller {
                         let truncated_header: String = header.chars().take(max_w).collect();
                         // Python: start_y = sidebar_y + 1 = (min_y + count - 1) + 1 = min_y + count
                         let desc_start = sidebar_start_y + sidebar_text.split('\n').count() as u16;
-                        execute!(
+                        queue!(
                             writer,
                             cursor::MoveTo(border_x + 1, desc_start),
                             style::Print(&truncated_header),
@@ -1007,7 +1324,7 @@ impl Controller {
                         for (i, line) in desc.iter().enumerate() {
                             let truncated: String =
                                 line.chars().take(max_w.saturating_sub(6)).collect();
-                            execute!(
+                            queue!(
                                 writer,
                                 cursor::MoveTo(border_x + 1, desc_start + 2 + i as u16),
                                 style::Print(format!("    * {truncated}")),
@@ -1033,20 +1350,29 @@ impl Controller {
             // Python: border at max_y - 2 (using original screen height, not reduced viewport)
             let border_y = height.saturating_sub(2);
 
+            // Clear info bar rows from min_x to prevent stale content from previous frames.
+            queue!(
+                writer,
+                cursor::MoveTo(min_x, border_y),
+                terminal::Clear(ClearType::UntilNewLine),
+                cursor::MoveTo(min_x, border_y + 1),
+                terminal::Clear(ClearType::UntilNewLine),
+            )?;
+
             // In x-mode, labels continue on border line (not usage line)
             if in_xmode {
                 if let Some(label) = quick_select::get_label(border_y as usize) {
-                    execute!(
+                    queue!(
                         writer,
                         cursor::MoveTo(0, border_y),
-                        style::Print(format!("{label}")),
+                        style::Print(label.to_string()),
                     )?;
                 }
             }
 
             let border_width = (chrome.content_width as usize).saturating_sub(min_x as usize);
             let border: String = "_".repeat(border_width);
-            execute!(
+            queue!(
                 writer,
                 cursor::MoveTo(min_x, border_y),
                 style::Print(&border),
@@ -1067,7 +1393,7 @@ impl Controller {
             // (curses addstr truncates at screen edge; crossterm Print wraps)
             let max_usage_width = (chrome.content_width - min_x) as usize;
             let truncated_usage: String = usage.chars().take(max_usage_width).collect();
-            execute!(
+            queue!(
                 writer,
                 cursor::MoveTo(min_x, border_y + 1),
                 SetForegroundColor(Color::DarkGrey),
@@ -1089,25 +1415,6 @@ pub enum Action {
 }
 
 const TRUNCATE_DECORATOR: &str = "|...|";
-
-/// Truncate a line to fit within max_width, using |...| decorator for long lines.
-fn truncate_line(text: &str, max_width: usize) -> String {
-    let chars: Vec<char> = text.chars().collect();
-    if chars.len() <= max_width {
-        return text.to_string();
-    }
-    if max_width <= TRUNCATE_DECORATOR.len() + 2 {
-        return chars.iter().take(max_width).collect();
-    }
-    let decorator_len = TRUNCATE_DECORATOR.len();
-    let remaining = max_width - decorator_len;
-    let front = remaining / 2;
-    let back = remaining - front;
-    let mut result: String = chars[..front].iter().collect();
-    result.push_str(TRUNCATE_DECORATOR);
-    result.extend(&chars[chars.len() - back..]);
-    result
-}
 
 /// Parse a key sequence string into KeyEvents (for --execute-keys flag).
 fn execute_keys_from_str(keys: &str) -> Vec<KeyEvent> {

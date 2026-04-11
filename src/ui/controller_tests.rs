@@ -2,6 +2,25 @@ use super::*;
 use crate::format::FormattedText;
 use crate::line::{Line, LineMatch};
 
+/// Truncate a line to fit within max_width, using |...| decorator for long lines.
+fn truncate_line(text: &str, max_width: usize) -> String {
+    let chars: Vec<char> = text.chars().collect();
+    if chars.len() <= max_width {
+        return text.to_string();
+    }
+    if max_width <= TRUNCATE_DECORATOR.len() + 2 {
+        return chars.iter().take(max_width).collect();
+    }
+    let decorator_len = TRUNCATE_DECORATOR.len();
+    let remaining = max_width - decorator_len;
+    let front = remaining / 2;
+    let back = remaining - front;
+    let mut result: String = chars[..front].iter().collect();
+    result.push_str(TRUNCATE_DECORATOR);
+    result.extend(&chars[chars.len() - back..]);
+    result
+}
+
 fn make_test_lines(paths: &[&str]) -> (Vec<Line>, Vec<usize>) {
     let lines: Vec<Line> = paths
         .iter()
@@ -863,6 +882,126 @@ fn test_sequence_command_mode_with_preset_warning_dismiss() {
     ctrl.handle_key(KeyEvent::new(KeyCode::Char('a'), KeyModifiers::NONE))
         .unwrap();
     assert_eq!(ctrl.mode, Mode::Normal);
+}
+
+// --- Rendering optimization regression tests ---
+
+#[test]
+fn test_normal_mode_render_has_no_full_screen_clear() {
+    let (lines, indices) = make_test_lines(&["a.txt", "b.txt", "c.txt"]);
+    let mut ctrl = Controller::new(lines, indices, None, false, None, false);
+    ctrl.set_viewport_size(80, 24);
+
+    let mut buf: Vec<u8> = Vec::new();
+    ctrl.render_to(&mut buf, (80, 24)).unwrap();
+
+    let output = String::from_utf8_lossy(&buf);
+    // Normal mode should NOT emit full-screen clear (\x1b[2J).
+    assert!(
+        !output.contains("\x1b[2J"),
+        "Normal mode render should not contain full-screen clear (\\x1b[2J)"
+    );
+    // Full render uses ClearType::UntilNewLine for clean output.
+    // Partial dirty-line renders use space-padding instead (no flicker).
+    assert!(
+        output.contains("\x1b[K"),
+        "Full render should contain ClearType::UntilNewLine (\\x1b[K)"
+    );
+    // Verify actual content is rendered (semantic check).
+    assert!(
+        output.contains("a.txt"),
+        "Normal mode render should contain file names"
+    );
+}
+
+#[test]
+fn test_quickselect_mode_render_has_no_full_screen_clear() {
+    let (lines, indices) = make_test_lines(&["a.txt", "b.txt", "c.txt"]);
+    let mut ctrl = Controller::new(lines, indices, None, false, None, false);
+    ctrl.set_viewport_size(80, 24);
+    ctrl.mode = Mode::QuickSelect;
+
+    let mut buf: Vec<u8> = Vec::new();
+    ctrl.render_to(&mut buf, (80, 24)).unwrap();
+
+    let output = String::from_utf8_lossy(&buf);
+    assert!(
+        !output.contains("\x1b[2J"),
+        "QuickSelect mode render should not contain full-screen clear (\\x1b[2J)"
+    );
+    assert!(
+        output.contains("\x1b[K"),
+        "QuickSelect full render should contain ClearType::UntilNewLine (\\x1b[K)"
+    );
+}
+
+#[test]
+fn test_wide_mode_render_has_no_full_screen_clear() {
+    let (lines, indices) = make_test_lines(&["a.txt", "b.txt", "c.txt"]);
+    let mut ctrl = Controller::new(lines, indices, None, false, None, false);
+    ctrl.set_viewport_size(210, 24);
+
+    let mut buf: Vec<u8> = Vec::new();
+    ctrl.render_to(&mut buf, (210, 24)).unwrap();
+
+    let output = String::from_utf8_lossy(&buf);
+    // Wide mode (>200 cols) should NOT use full-screen clear
+    assert!(
+        !output.contains("\x1b[2J"),
+        "Wide mode render should not contain full-screen clear (\\x1b[2J)"
+    );
+    // Full render uses ClearType::UntilNewLine
+    assert!(
+        output.contains("\x1b[K"),
+        "Wide mode full render should contain ClearType::UntilNewLine (\\x1b[K)"
+    );
+    // Sidebar border should be present
+    assert!(
+        output.contains("|"),
+        "Wide mode render should contain sidebar border"
+    );
+}
+
+#[test]
+fn test_command_mode_render_uses_full_screen_clear() {
+    let (lines, indices) = make_test_lines(&["a.txt", "b.txt"]);
+    let mut ctrl = Controller::new(lines, indices, None, false, None, false);
+    ctrl.set_viewport_size(80, 24);
+    ctrl.mode = Mode::Command;
+
+    let mut buf: Vec<u8> = Vec::new();
+    ctrl.render_to(&mut buf, (80, 24)).unwrap();
+
+    // Command/Warning overlay modes use full-screen clear
+    let output = String::from_utf8_lossy(&buf);
+    assert!(
+        output.contains("\x1b[2J"),
+        "Command mode render should contain full-screen clear (\\x1b[2J)"
+    );
+}
+
+#[test]
+fn test_warning_mode_render_uses_full_screen_clear() {
+    let (lines, indices) = make_test_lines(&["a.txt"]);
+    let mut ctrl = Controller::new(
+        lines,
+        indices,
+        Some("git add".to_string()),
+        false,
+        None,
+        false,
+    );
+    ctrl.set_viewport_size(80, 24);
+    ctrl.mode = Mode::Warning;
+
+    let mut buf: Vec<u8> = Vec::new();
+    ctrl.render_to(&mut buf, (80, 24)).unwrap();
+
+    let output = String::from_utf8_lossy(&buf);
+    assert!(
+        output.contains("\x1b[2J"),
+        "Warning mode render should contain full-screen clear (\\x1b[2J)"
+    );
 }
 
 // --- begin_height calculation test ---
