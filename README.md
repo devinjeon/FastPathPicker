@@ -1,4 +1,4 @@
-# fpp2 -- Fast PathPicker 2
+# fpp2 -- Fast PathPicker
 
 A high-performance Rust drop-in replacement for Facebook's [PathPicker](https://github.com/facebook/PathPicker). Install `fpp2` and use it anywhere you used `fpp`.
 
