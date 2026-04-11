@@ -24,40 +24,24 @@ A high-performance Rust drop-in replacement for Facebook's [PathPicker](https://
 
 The [original PathPicker](https://github.com/facebook/PathPicker) is a Python script that spawns multiple subprocesses (bash wrapper -> Python parser -> pickle -> Python UI -> bash executor). This Rust rewrite:
 
-- Single ~4MB binary with zero runtime dependencies
+- Single ~2MB binary with zero runtime dependencies
 - Single-process architecture -- no intermediate serialization, no subprocess chain
-- 2-3x faster end-to-end, startup under 30ms
+- 2-5x faster end-to-end, 3-5x less memory
 
 ### Benchmarks
 
-Measured on macOS (Apple Silicon), median of 10 runs. Reproduce with `make bench-e2e` ([source](tests/e2e/bench_e2e.sh)).
+Measured on Apple M1 Max (10 cores, 64GB) with [hyperfine](https://github.com/sharkdp/hyperfine) (warmup 3, runs 10). Reproduce with `make bench-e2e`.
 
-**Startup time** (process launch to exit, no meaningful work):
+![Benchmark](docs/bench.png)
 
-| Scenario | Rust | Python | Speedup |
-|----------|------|--------|---------|
-| `--help` | 26ms | 84ms | 3.2x |
-| Empty input | 31ms | 86ms | 2.8x |
+| Metric | Speedup | Notes |
+|--------|---------|-------|
+| Startup | 8-20x | 2ms vs 65ms (native binary vs Python interpreter) |
+| Real-world inputs | 5-8x | git diff, grep output, file lists |
+| File validation | 7-11x | Default mode -- single-process `stat()` vs subprocess + pickle |
+| Memory | 3-4x less | 7MB vs 23MB at 1K lines, 76MB vs 263MB at 50K |
 
-**End-to-end processing** (non-interactive mode, `--ni --all -c "echo"`):
-
-| Input | Rust | Python | Speedup |
-|-------|------|--------|---------|
-| Single file | 39ms | 89ms | 2.3x |
-| git status (3 files) | 39ms | 89ms | 2.3x |
-| grep output (5 files) | 40ms | 89ms | 2.3x |
-| git diff (14 files) | 40ms | 90ms | 2.2x |
-| git diff with color (19 files) | 41ms | 91ms | 2.2x |
-| File list (100 files) | 33ms | 90ms | 2.7x |
-| Deep paths (44 files) | 33ms | 92ms | 2.8x |
-| git long diff | 42ms | 98ms | 2.3x |
-| git long diff with color | 42ms | 98ms | 2.3x |
-| Generated 500 lines | 50ms | 108ms | 2.2x |
-| Generated 2000 lines | 100ms | 217ms | 2.2x |
-| All-input mode (8 branches) | 33ms | 88ms | 2.7x |
-| No matches (plain text) | 34ms | 90ms | 2.6x |
-
-Python's ~85ms floor is interpreter startup. Rust's ~30ms floor is the native binary launch overhead. The gap widens with input size as Rust's parsing is also faster.
+Details: [docs/benchmarks.md](docs/benchmarks.md) (test environment, methodology, full tables).
 
 ## Compatibility with [Original PathPicker](https://github.com/facebook/PathPicker)
 
@@ -72,7 +56,7 @@ All CLI arguments, keyboard shortcuts, environment variables, and regex patterns
 | UI modes | 4/4 | Normal, Command, QuickSelect, Warning |
 | Environment variables | 7/7 | `FPP_EDITOR`, `VISUAL`, `EDITOR`, `FPP_DIR`, `FPP_DISABLE_SPLIT`, `FPP_LINENUM_SEP`, `FPP_REPOS` |
 | Screen tests | 34/34 | All original Python screen tests ported and passing |
-| E2E snapshots | 534 cases | Verified identical output against the original Python implementation |
+| E2E snapshots | 538 cases | Verified identical output against the original Python implementation |
 
 Known differences (non-breaking):
 
@@ -117,9 +101,9 @@ brew install fpp2
 ### From Source
 
 ```bash
-git clone https://github.com/user/fast-path-picker.git
+git clone https://github.com/devinjeon/fast-path-picker.git
 cd fast-path-picker
-make build      # release build with LTO
+make build      # release build
 make install    # installs to ~/.cargo/bin/fpp2
 ```
 
@@ -251,7 +235,7 @@ Tests focus on ensuring compatibility with the original PathPicker:
 
 - All 34 screen tests from the original ported 1:1 to verify identical UI behavior
 - 66 of the original's 84 file matching test cases included in the parsing suite
-- 534 e2e snapshots verify identical output against the original Python implementation (`make qa`)
+- 538 e2e snapshots verify identical output against the original Python implementation (`make qa`)
 - Additional tests not in the original: stdin pipe handling, ANSI escape parsing, state serialization, editor command generation
 
 ## License
