@@ -98,10 +98,11 @@ pub fn clean_state() -> Result<usize> {
         get_input_cache_path(),
         get_state_dir().join(".fpp.log"),
     ];
-    let count = state_files.len();
+    let mut count = 0;
     for path in &state_files {
         if path.exists() {
             fs::remove_file(path)?;
+            count += 1;
         }
     }
     Ok(count)
