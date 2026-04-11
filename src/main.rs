@@ -7,14 +7,14 @@ use clap::Parser;
 
 use fpp2::{input, line, output, state, ui};
 
-/// Fast PathPicker 2 — a high-performance Rust drop-in replacement for Facebook's PathPicker.
+/// Fast PathPicker — a high-performance Rust drop-in replacement for Facebook's PathPicker.
 /// Parses file paths from stdin and presents an interactive selection UI.
 #[derive(Parser, Debug)]
 #[command(
     name = "fpp2",
     version = env!("CARGO_PKG_VERSION"),
     about = "
-fpp2 - Fast PathPicker 2
+fpp2 - Fast PathPicker
 
 Pipe any command output to fpp2 to select files interactively:
   git status | fpp2

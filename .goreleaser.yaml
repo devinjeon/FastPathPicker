@@ -4,7 +4,7 @@ project_name: fpp2
 release:
   github:
     owner: devinjeon
-    name: fast-path-picker
+    name: FastPathPicker
 
 builds:
   - id: fpp2
@@ -34,12 +34,12 @@ homebrew_casks:
       - fpp2
     repository:
       owner: devinjeon
-      name: fast-path-picker
+      name: FastPathPicker
       branch: "{{ .Tag }}"
       pull_request:
         enabled: true
     commit_author:
       name: Hyojun Jeon
       email: jeon@hyojun.me
-    description: "Fast PathPicker 2 — a high-performance Rust drop-in replacement for Facebook's PathPicker"
-    homepage: https://github.com/devinjeon/fast-path-picker
+    description: "Fast PathPicker — a high-performance Rust drop-in replacement for Facebook's PathPicker"
+    homepage: https://github.com/devinjeon/FastPathPicker

@@ -2,7 +2,8 @@
 name = "fpp2"
 version = "0.1.0"
 edition = "2021"
-description = "Fast PathPicker 2 — a high-performance Rust drop-in replacement for Facebook's PathPicker"
+description = "Fast PathPicker — a high-performance Rust drop-in replacement for Facebook's PathPicker"
+repository = "https://github.com/devinjeon/FastPathPicker"
 license = "MIT"
 
 [dependencies]

@@ -94,15 +94,15 @@ git log --oneline | fpp2 -c 'git show $F'
 ### Homebrew (macOS / Linux)
 
 ```bash
-brew tap devinjeon/fast-path-picker
+brew tap devinjeon/FastPathPicker
 brew install fpp2
 ```
 
 ### From Source
 
 ```bash
-git clone https://github.com/devinjeon/fast-path-picker.git
-cd fast-path-picker
+git clone https://github.com/devinjeon/FastPathPicker.git
+cd FastPathPicker
 make build      # release build
 make install    # installs to ~/.cargo/bin/fpp2
 ```
