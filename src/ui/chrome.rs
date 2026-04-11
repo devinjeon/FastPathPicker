@@ -4,6 +4,8 @@ pub struct Chrome {
     pub sidebar_width: u16,
     pub content_width: u16,
     pub content_height: u16,
+    /// Full terminal height (before subtracting info bar lines).
+    pub height: u16,
 }
 
 const WIDE_MODE_THRESHOLD: u16 = 200;
@@ -23,6 +25,7 @@ impl Chrome {
             sidebar_width,
             content_width,
             content_height,
+            height,
         }
     }
 
