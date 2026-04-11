@@ -246,11 +246,12 @@ fn unpack_match(captures: &regex::Captures, num_index: usize, no_num: bool) -> M
             .unwrap_or(0)
     };
     // Store match position (from group 0 = full match)
+    // unwrap is safe: group 0 (the full match) is always present when captures succeeds.
     let full_match = captures.get(0).unwrap();
     let match_start = full_match.start();
     let mut match_end = full_match.end();
     // Python strips trailing whitespace from the match group
-    let matched_str = &full_match.as_str();
+    let matched_str = full_match.as_str();
     let stripped = matched_str.trim_end();
     match_end -= matched_str.len() - stripped.len();
     MatchResult {
@@ -322,7 +323,7 @@ pub fn match_line(line: &str, validate_file_exists: bool, all_input: bool) -> Op
 
 /// Resolve a file path to an absolute or resolvable form.
 pub fn prepend_dir(file: &str, with_file_inspection: bool) -> String {
-    if file.is_empty() || file.len() < 2 {
+    if file.len() < 2 {
         return file.to_string();
     }
 
@@ -354,7 +355,7 @@ pub fn prepend_dir(file: &str, with_file_inspection: bool) -> String {
     }
 
     let repos = get_repos();
-    if repos.contains(&first.to_string()) {
+    if repos.iter().any(|r| r == first) {
         return expand_home(&format!("~/{file}"));
     }
 
