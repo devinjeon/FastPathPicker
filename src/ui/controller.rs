@@ -42,7 +42,21 @@ enum LoopAction {
     /// Continue the event loop.
     Continue,
     /// Exit the event loop with the given result.
-    Exit(Result<()>),
+    /// The bool indicates whether a script should be executed (false = silent quit).
+    Exit(Result<bool>),
+}
+
+/// Bundles the per-render parameters shared across content line rendering calls,
+/// replacing multiple individual arguments with a single context struct.
+struct RenderContext<'a> {
+    chrome: &'a Chrome,
+    has_scrollbar: bool,
+    in_xmode: bool,
+    text_width: usize,
+    sb_range: &'a Option<scrollbar::ScrollBarRange>,
+    hovered_line_idx: Option<usize>,
+    use_space_padding: bool,
+    padding_cache: &'a str,
 }
 
 /// Main UI controller. Manages the interactive selection interface.
@@ -132,10 +146,12 @@ impl Controller {
     }
 
     /// Run the interactive UI loop. Returns when the user makes a selection or quits.
-    pub fn run(&mut self) -> Result<()> {
+    /// Returns `Ok(true)` if the user performed an action (quit/execute/no-matches),
+    /// `Ok(false)` if the user pressed Ctrl-C (silent quit, no script should run).
+    pub fn run(&mut self) -> Result<bool> {
         if self.match_indices.is_empty() {
             output::output_no_matches()?;
-            return Ok(());
+            return Ok(true);
         }
 
         let mut stdout = io::stdout();
@@ -162,7 +178,7 @@ impl Controller {
         result
     }
 
-    fn event_loop(&mut self, stdout: &mut impl Write) -> Result<()> {
+    fn event_loop(&mut self, stdout: &mut impl Write) -> Result<bool> {
         // Process any queued execute-keys first
         while let Some(key) = self.execute_keys_queue.pop_front() {
             match self.handle_key(key)? {
@@ -172,13 +188,14 @@ impl Controller {
                 Action::Quit => {
                     output::output_nothing()?;
                     self.save_selection()?;
-                    return Ok(());
+                    return Ok(true);
                 }
                 Action::SilentQuit => {
-                    return Ok(());
+                    return Ok(false);
                 }
                 Action::Execute => {
-                    return self.execute_selection();
+                    self.execute_selection()?;
+                    return Ok(true);
                 }
             }
         }
@@ -237,13 +254,14 @@ impl Controller {
                     Action::Quit => {
                         output::output_nothing()?;
                         self.save_selection()?;
-                        return Ok(LoopAction::Exit(Ok(())));
+                        return Ok(LoopAction::Exit(Ok(true)));
                     }
                     Action::SilentQuit => {
-                        return Ok(LoopAction::Exit(Ok(())));
+                        return Ok(LoopAction::Exit(Ok(false)));
                     }
                     Action::Execute => {
-                        return Ok(LoopAction::Exit(self.execute_selection()));
+                        self.execute_selection()?;
+                        return Ok(LoopAction::Exit(Ok(true)));
                     }
                 }
                 self.dirty = true;
@@ -651,13 +669,25 @@ impl Controller {
     }
 
     fn toggle_select_all(&mut self) {
-        // Toggle each unique path individually (like Python)
+        // Two-pass approach to work around the borrow checker:
+        // First pass (immutable): collect indices of the first occurrence of each unique path.
+        // We compare by string value (not pointer address) to correctly deduplicate paths
+        // that have the same content but different String allocations.
         let mut seen_paths = std::collections::HashSet::new();
-        for &idx in &self.match_indices {
+        let toggle_indices: Vec<usize> = self
+            .match_indices
+            .iter()
+            .filter(|&&idx| {
+                self.lines[idx]
+                    .as_match()
+                    .is_some_and(|m| seen_paths.insert(m.path.as_str()))
+            })
+            .copied()
+            .collect();
+        // Second pass (mutable): toggle the first occurrence of each unique path.
+        for idx in toggle_indices {
             if let Some(m) = self.lines[idx].as_match_mut() {
-                if seen_paths.insert(m.path.clone()) {
-                    m.selected = !m.selected;
-                }
+                m.selected = !m.selected;
             }
         }
     }
@@ -763,25 +793,24 @@ impl Controller {
         // Pre-allocate padding buffer once for all lines in this render pass.
         let padding_cache = " ".repeat(text_width);
 
+        let ctx = RenderContext {
+            chrome: &chrome,
+            has_scrollbar,
+            in_xmode,
+            text_width,
+            sb_range: &sb_range,
+            hovered_line_idx,
+            use_space_padding: true, // space-padding for partial redraws (no flicker)
+            padding_cache: &padding_cache,
+        };
+
         for &line_idx in dirty_line_indices {
             // Skip lines outside the visible viewport
             if line_idx < self.scroll_offset || line_idx >= viewport_end {
                 continue;
             }
             let row = line_idx - self.scroll_offset;
-            self.render_content_line(
-                writer,
-                &chrome,
-                row,
-                line_idx,
-                has_scrollbar,
-                in_xmode,
-                text_width,
-                &sb_range,
-                hovered_line_idx,
-                true, // space-padding for partial redraws (no flicker)
-                &padding_cache,
-            )?;
+            self.render_content_line(writer, row, line_idx, &ctx)?;
         }
 
         // When the whole viewport scrolled, update scrollbar + empty rows.
@@ -803,7 +832,7 @@ impl Controller {
                     if let Some(label) = quick_select::get_label(row) {
                         queue!(
                             writer,
-                            cursor::MoveTo(0, row as u16),
+                            cursor::MoveTo(1, row as u16),
                             style::Print(label.to_string()),
                         )?;
                     }
@@ -833,23 +862,22 @@ impl Controller {
     /// of ClearType::UntilNewLine, preventing flicker during partial redraws.
     /// `padding_cache` is a pre-allocated spaces buffer (at least `text_width` long) to
     /// avoid per-line allocation when space-padding.
-    #[allow(clippy::too_many_arguments)]
     fn render_content_line(
         &self,
         writer: &mut impl Write,
-        chrome: &Chrome,
         row: usize,
         line_idx: usize,
-        has_scrollbar: bool,
-        in_xmode: bool,
-        text_width: usize,
-        sb_range: &Option<scrollbar::ScrollBarRange>,
-        hovered_line_idx: Option<usize>,
-        use_space_padding: bool,
-        padding_cache: &str,
+        ctx: &RenderContext<'_>,
     ) -> Result<()> {
         let line = &self.lines[line_idx];
-        let is_hovered = hovered_line_idx == Some(line_idx);
+        let is_hovered = ctx.hovered_line_idx == Some(line_idx);
+        let has_scrollbar = ctx.has_scrollbar;
+        let in_xmode = ctx.in_xmode;
+        let text_width = ctx.text_width;
+        let chrome = ctx.chrome;
+        let sb_range = ctx.sb_range;
+        let use_space_padding = ctx.use_space_padding;
+        let padding_cache = ctx.padding_cache;
 
         queue!(writer, cursor::MoveTo(0, row as u16))?;
 
@@ -863,12 +891,13 @@ impl Controller {
             queue!(writer, cursor::MoveTo(4, row as u16), style::Print(" "))?;
         }
 
-        // Quick-select labels
+        // Quick-select labels — rendered at column 1 (matching Python) to leave a gap
+        // between the label and any scrollbar at column 0.
         if in_xmode {
             if let Some(label) = quick_select::get_label(row) {
                 queue!(
                     writer,
-                    cursor::MoveTo(0, row as u16),
+                    cursor::MoveTo(1, row as u16),
                     style::Print(label.to_string()),
                 )?;
             }
@@ -1102,22 +1131,19 @@ impl Controller {
         let hovered_line_idx = self.match_indices.get(self.hover_index).copied();
 
         // Empty padding cache — full redraws use ClearType::UntilNewLine, not space-padding.
-        let padding_cache = "";
+        let ctx = RenderContext {
+            chrome: &chrome,
+            has_scrollbar,
+            in_xmode,
+            text_width,
+            sb_range: &sb_range,
+            hovered_line_idx,
+            use_space_padding: false, // ClearType::UntilNewLine for full redraws
+            padding_cache: "",
+        };
 
         for (row, line_idx) in (self.scroll_offset..viewport_end).enumerate() {
-            self.render_content_line(
-                writer,
-                &chrome,
-                row,
-                line_idx,
-                has_scrollbar,
-                in_xmode,
-                text_width,
-                &sb_range,
-                hovered_line_idx,
-                false, // ClearType::UntilNewLine for full redraws
-                padding_cache,
-            )?;
+            self.render_content_line(writer, row, line_idx, &ctx)?;
         }
 
         // Draw scrollbar and x-mode labels for rows beyond content area
@@ -1142,7 +1168,7 @@ impl Controller {
                     if let Some(label) = quick_select::get_label(row) {
                         queue!(
                             writer,
-                            cursor::MoveTo(0, row as u16),
+                            cursor::MoveTo(1, row as u16),
                             style::Print(label.to_string()),
                         )?;
                     }
@@ -1159,12 +1185,13 @@ impl Controller {
 
     fn render_preset_warning(&self, writer: &mut impl Write, chrome: &Chrome) -> Result<()> {
         // Python: (min_x, min_y, _, max_y) = get_chrome_boundaries()
-        // max_y accounts for narrow info bar (height - 4 in narrow mode)
+        // max_y accounts for narrow info bar (height - 4 in narrow mode) for centering.
         let max_y = chrome.content_height;
         let min_y = 0u16;
-        let y_start = (max_y + min_y) / 2 - 3;
-        let has_scrollbar =
-            ScrollBar::new(self.lines.len(), chrome.content_height as usize).is_active();
+        let y_start = ((max_y + min_y) / 2).saturating_sub(3);
+        // Python uses the full screen height for scrollbar calculation (ScrollBar uses
+        // max_y from getmaxyx, which is the raw terminal height).
+        let has_scrollbar = ScrollBar::new(self.lines.len(), chrome.height as usize).is_active();
         let x_start = if has_scrollbar { 5u16 } else { 0u16 };
 
         queue!(
@@ -1259,7 +1286,7 @@ impl Controller {
                 style::Print(&prompt_line),
                 cursor::MoveTo(0, input_y as u16),
                 style::Print(&self.command_buffer),
-                cursor::MoveTo(self.command_buffer.len() as u16, input_y as u16),
+                cursor::MoveTo(self.command_buffer.chars().count() as u16, input_y as u16),
             )?;
         }
 
@@ -1364,7 +1391,7 @@ impl Controller {
                 if let Some(label) = quick_select::get_label(border_y as usize) {
                     queue!(
                         writer,
-                        cursor::MoveTo(0, border_y),
+                        cursor::MoveTo(1, border_y),
                         style::Print(label.to_string()),
                     )?;
                 }
@@ -1391,14 +1418,12 @@ impl Controller {
             };
             // Truncate usage text to available width to prevent line wrapping
             // (curses addstr truncates at screen edge; crossterm Print wraps)
-            let max_usage_width = (chrome.content_width - min_x) as usize;
+            let max_usage_width = chrome.content_width.saturating_sub(min_x) as usize;
             let truncated_usage: String = usage.chars().take(max_usage_width).collect();
             queue!(
                 writer,
                 cursor::MoveTo(min_x, border_y + 1),
-                SetForegroundColor(Color::DarkGrey),
                 style::Print(&truncated_usage),
-                SetForegroundColor(Color::Reset),
             )?;
         }
 
@@ -1432,6 +1457,7 @@ fn execute_keys_from_str(keys: &str) -> Vec<KeyEvent> {
                 "PAGEDOWN" | "NPAGE" => Some(KeyEvent::new(KeyCode::PageDown, KeyModifiers::NONE)),
                 "ENTER" => Some(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)),
                 "SPACE" => Some(KeyEvent::new(KeyCode::Char(' '), KeyModifiers::NONE)),
+                "CTRL_C" => Some(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL)),
                 _ if k.len() == 1 => {
                     // Use original char to preserve case: 'f' != 'F'
                     let ch = k.chars().next().unwrap();
