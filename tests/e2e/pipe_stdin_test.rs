@@ -170,3 +170,41 @@ fn test_piped_stdin_creates_input_cache() {
         "input cache should be created at {cache_path:?}"
     );
 }
+
+/// Ctrl-C (silent quit via --execute-keys) should NOT execute any script.
+/// Regression test: previously, Ctrl-C would leave stale .fpp.sh from a prior
+/// session and then execute_script() would run it, causing unexpected output.
+#[test]
+fn test_ctrl_c_does_not_execute_stale_script() {
+    let tmp_dir = tempfile::tempdir().unwrap();
+    let state_dir = tmp_dir.path().to_str().unwrap();
+
+    // Pre-create a stale .fpp.sh from a "previous session"
+    let stale_script = tmp_dir.path().join(".fpp.sh");
+    std::fs::write(&stale_script, "echo 'STALE SCRIPT EXECUTED'").unwrap();
+
+    // Run fpp2 with --execute-keys that simulates Ctrl-C (silent quit).
+    // FPP_SKIP_EXECUTE is NOT set, so execute_script() will run if run() returns true.
+    let mut cmd = Command::new(fpp_binary());
+    cmd.args(["--no-file-checks", "--all", "-e", "CTRL_C"])
+        .env("FPP_DIR", state_dir)
+        .env_remove("FPP_SKIP_EXECUTE")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+
+    let mut child = cmd.spawn().expect("failed to spawn fpp");
+    if let Some(ref mut stdin) = child.stdin {
+        stdin.write_all(b"src/main.rs\nsrc/parse.rs\n").unwrap();
+    }
+    drop(child.stdin.take());
+
+    let output = child.wait_with_output().expect("failed to wait on fpp");
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+
+    // The stale script should NOT have been executed
+    assert!(
+        !stdout.contains("STALE SCRIPT EXECUTED"),
+        "Ctrl-C should not execute stale .fpp.sh script, but stdout was: {stdout}"
+    );
+}
