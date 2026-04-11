@@ -4,6 +4,9 @@
 pub struct FormattedText {
     plain: String,
     raw: String,
+    /// Pre-computed char vector from `raw` to avoid repeated `chars().collect()` allocations
+    /// in methods that need character-level indexing (breakat, truncation, etc.).
+    raw_chars: Vec<char>,
 }
 
 impl FormattedText {
@@ -30,9 +33,11 @@ impl FormattedText {
             }
         }
 
+        let raw_owned = raw.to_string();
         Self {
             plain,
-            raw: raw.to_string(),
+            raw: raw_owned,
+            raw_chars: chars,
         }
     }
 
@@ -50,7 +55,7 @@ impl FormattedText {
     /// Split the raw text at a visible character position, preserving ANSI codes.
     /// Like Python's FormattedText.breakat(). Returns (before, after) with ANSI intact.
     pub fn breakat(&self, visible_pos: usize) -> (String, String) {
-        let chars: Vec<char> = self.raw.chars().collect();
+        let chars = &self.raw_chars;
         let mut visible = 0;
         let mut i = 0;
 
@@ -89,7 +94,7 @@ impl FormattedText {
         }
 
         let mut result = String::new();
-        let chars: Vec<char> = self.raw.chars().collect();
+        let chars = &self.raw_chars;
         let mut visible_count = 0;
         let mut i = 0;
 
@@ -147,7 +152,7 @@ impl FormattedText {
     /// Take the first N visible characters from raw text, preserving ANSI codes.
     fn raw_take_front(&self, n: usize) -> String {
         let mut result = String::new();
-        let chars: Vec<char> = self.raw.chars().collect();
+        let chars = &self.raw_chars;
         let mut visible = 0;
         let mut i = 0;
 
@@ -175,9 +180,8 @@ impl FormattedText {
 
     /// Take the last N visible characters from raw text, preserving ANSI codes.
     fn raw_take_back(&self, n: usize) -> String {
-        let chars: Vec<char> = self.raw.chars().collect();
-        let plain_chars: Vec<char> = self.plain.chars().collect();
-        let total_visible = plain_chars.len();
+        let chars = &self.raw_chars;
+        let total_visible = self.plain.chars().count();
         if n >= total_visible {
             return self.raw.clone();
         }
