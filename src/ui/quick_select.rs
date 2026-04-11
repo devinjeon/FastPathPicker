@@ -3,8 +3,12 @@
 pub const QUICK_SELECT_LABELS: &str = "BCDEGHIJKLMNOPQRSTUVWXYZ1234567890~!@#$%^&*()_+<>?{}|;'";
 
 /// Get the label character for a given visible line index in quick-select mode.
+/// Labels are ASCII-only, so byte indexing is safe and O(1).
 pub fn get_label(index: usize) -> Option<char> {
-    QUICK_SELECT_LABELS.chars().nth(index)
+    QUICK_SELECT_LABELS
+        .as_bytes()
+        .get(index)
+        .map(|&b| b as char)
 }
 
 /// Find the line index for a given quick-select label character.
