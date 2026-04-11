@@ -209,6 +209,12 @@ fn format_system_time_local(time: SystemTime) -> String {
     // Get local timezone offset (approximate: use libc on Unix)
     let local_secs = total_secs + get_utc_offset(total_secs);
 
+    // Guard against negative local_secs (dates before epoch after timezone offset).
+    // Fall back to epoch display rather than looping forever with negative days.
+    if local_secs < 0 {
+        return "01/01/1970 00:00:00".to_string();
+    }
+
     let days_since_epoch = local_secs / 86400;
     let time_of_day = local_secs.rem_euclid(86400);
     let hours = time_of_day / 3600;
@@ -249,9 +255,14 @@ fn format_system_time_local(time: SystemTime) -> String {
 fn get_utc_offset(unix_time: i64) -> i64 {
     use std::mem::MaybeUninit;
     unsafe {
-        let mut tm = MaybeUninit::zeroed().assume_init();
-        libc::localtime_r(&unix_time, &mut tm);
-        tm.tm_gmtoff
+        let mut tm = MaybeUninit::zeroed();
+        let result = libc::localtime_r(&unix_time, tm.as_mut_ptr());
+        if result.is_null() {
+            // localtime_r failed (e.g., invalid timestamp); fall back to UTC.
+            return 0;
+        }
+        // SAFETY: localtime_r returned non-NULL, so the tm struct is fully initialized.
+        tm.assume_init().tm_gmtoff
     }
 }
 
@@ -280,7 +291,12 @@ fn format_size_python(bytes: u64) -> String {
 #[path = "line_tests.rs"]
 mod tests;
 
-/// Get username from uid (Unix only)
+/// Get username from uid (Unix only).
+///
+/// SAFETY: `getpwuid` returns a pointer to static storage that may be overwritten
+/// by subsequent calls to `getpwuid`, `getpwnam`, or `endpwent`. This is safe here
+/// because we immediately copy the name into an owned String before returning, and
+/// fpp2 runs all UI/metadata logic on a single thread (no concurrent calls).
 #[cfg(unix)]
 fn get_username(uid: u32) -> Option<String> {
     unsafe {
@@ -293,7 +309,12 @@ fn get_username(uid: u32) -> Option<String> {
     }
 }
 
-/// Get group name from gid (Unix only)
+/// Get group name from gid (Unix only).
+///
+/// SAFETY: `getgrgid` returns a pointer to static storage that may be overwritten
+/// by subsequent calls to `getgrgid`, `getgrnam`, or `endgrent`. This is safe here
+/// because we immediately copy the name into an owned String before returning, and
+/// fpp2 runs all UI/metadata logic on a single thread (no concurrent calls).
 #[cfg(unix)]
 fn get_groupname(gid: u32) -> Option<String> {
     unsafe {
