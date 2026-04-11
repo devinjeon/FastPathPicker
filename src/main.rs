@@ -83,10 +83,11 @@ fn preprocess_args() -> Vec<String> {
         .collect()
 }
 
-fn run_once(args: &Args, lines: Vec<line::Line>, match_indices: Vec<usize>) -> Result<()> {
+/// Returns `Ok(true)` if a script should be executed, `Ok(false)` for silent quit (Ctrl-C).
+fn run_once(args: &Args, lines: Vec<line::Line>, match_indices: Vec<usize>) -> Result<bool> {
     if match_indices.is_empty() {
         output::output_no_matches()?;
-        return Ok(());
+        return Ok(true);
     }
 
     let preset_command = args.command.as_ref().map(|parts| parts.join(" "));
@@ -99,7 +100,7 @@ fn run_once(args: &Args, lines: Vec<line::Line>, match_indices: Vec<usize>) -> R
             .collect();
         let command = preset_command.as_deref().unwrap_or("");
         output::exec_composed_command(command, &matches)?;
-        return Ok(());
+        return Ok(true);
     }
 
     // Create and run interactive controller
@@ -113,9 +114,7 @@ fn run_once(args: &Args, lines: Vec<line::Line>, match_indices: Vec<usize>) -> R
         args.all_input,
     );
 
-    controller.run()?;
-
-    Ok(())
+    controller.run()
 }
 
 /// Execute the generated .fpp.sh script using the user's shell.
@@ -222,8 +221,12 @@ fn main() -> Result<()> {
         if let Ok(tty) = std::fs::File::open("/dev/tty") {
             // SAFETY: dup2 atomically replaces fd 0 with the tty fd.
             // This is standard practice for TUI programs that read piped stdin.
-            unsafe {
-                libc::dup2(tty.as_raw_fd(), libc::STDIN_FILENO);
+            let ret = unsafe { libc::dup2(tty.as_raw_fd(), libc::STDIN_FILENO) };
+            if ret == -1 {
+                eprintln!(
+                    "warning: dup2 failed (errno {}), interactive UI may not work",
+                    std::io::Error::last_os_error()
+                );
             }
         }
     }
@@ -234,12 +237,16 @@ fn main() -> Result<()> {
     if args.keep_open && std::env::var("FPP_SKIP_EXECUTE").is_err() {
         loop {
             let _ = state::delete_selection();
-            run_once(&args, lines.clone(), match_indices.clone())?;
-            execute_script(args.non_interactive)?;
+            let should_execute = run_once(&args, lines.clone(), match_indices.clone())?;
+            if should_execute {
+                execute_script(args.non_interactive)?;
+            }
         }
     } else {
-        run_once(&args, lines, match_indices)?;
-        execute_script(args.non_interactive)?;
+        let should_execute = run_once(&args, lines, match_indices)?;
+        if should_execute {
+            execute_script(args.non_interactive)?;
+        }
     }
 
     Ok(())
