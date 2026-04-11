@@ -12,6 +12,7 @@ A high-performance Rust drop-in replacement for Facebook's [PathPicker](https://
   - [Keyboard Shortcuts](#keyboard-shortcuts)
   - [Environment Variables](#environment-variables)
   - [Editor Integration](#editor-integration)
+  - [tmux-fpp (tmux integration)](#tmux-fpp-tmux-integration)
   - [All-Input Mode](#all-input-mode)
   - [Non-Interactive Mode](#non-interactive-mode)
   - [Keep-Open Mode](#keep-open-mode)
@@ -106,6 +107,13 @@ git log --oneline | fpp2 -c 'git show $F'
 
 ## Installation
 
+### Homebrew (macOS / Linux)
+
+```bash
+brew tap devinjeon/fast-path-picker
+brew install fpp2
+```
+
 ### From Source
 
 ```bash
@@ -183,6 +191,19 @@ fpp2 detects your editor and formats arguments with line numbers accordingly:
 | nano, joe, emacs, micro, vi | `+linenum file` | `nano +10 file1 +20 file2` |
 
 Paths with spaces are automatically quoted. `FPP_DISABLE_SPLIT` opens each file in a separate vim buffer instead of splits.
+
+### tmux-fpp (tmux integration)
+
+[tmux-fpp](https://github.com/tmux-plugins/tmux-fpp) grabs file paths from the current tmux pane and pipes them into PathPicker. To use fpp2 instead of the original fpp:
+
+```tmux
+# .tmux.conf
+set -g @plugin 'tmux-plugins/tmux-fpp'
+set -g @fpp-key 'x'
+set -g @fpp-path '/path/to/fpp2'   # point to fpp2 binary
+```
+
+After reloading tmux config, press `prefix + x` to pick files from the current pane.
 
 ### All-Input Mode
 

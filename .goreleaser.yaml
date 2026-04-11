@@ -1,0 +1,45 @@
+version: 2
+project_name: fpp2
+
+release:
+  github:
+    owner: devinjeon
+    name: fast-path-picker
+
+builds:
+  - id: fpp2
+    builder: rust
+    binary: fpp2
+    targets:
+      - x86_64-apple-darwin
+      - aarch64-apple-darwin
+      - x86_64-unknown-linux-gnu
+      - aarch64-unknown-linux-gnu
+
+archives:
+  - id: fpp2
+    ids:
+      - fpp2
+    formats:
+      - tar.gz
+    name_template: "{{ .Binary }}_{{ .Tag }}_{{ .Os }}_{{ .Arch }}"
+
+checksum:
+  name_template: "{{ .ProjectName }}_checksums.txt"
+  algorithm: sha256
+
+homebrew_casks:
+  - name: fpp2
+    ids:
+      - fpp2
+    repository:
+      owner: devinjeon
+      name: fast-path-picker
+      branch: "{{ .Tag }}"
+      pull_request:
+        enabled: true
+    commit_author:
+      name: Hyojun Jeon
+      email: jeon@hyojun.me
+    description: "Fast PathPicker 2 — a high-performance Rust drop-in replacement for Facebook's PathPicker"
+    homepage: https://github.com/devinjeon/fast-path-picker
