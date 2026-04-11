@@ -787,7 +787,10 @@ fn test_select_all_on_long_list() {
         .iter()
         .filter(|l| l.as_match().is_some_and(|m| m.selected))
         .count();
-    assert!(selected_count > 0);
+    assert_eq!(
+        selected_count, 1,
+        "Only the first occurrence of each unique path should be selected"
+    );
 }
 
 // --- Scroll offset tests ---
@@ -1018,4 +1021,56 @@ fn test_begin_height_matches_python() {
             "begin_height mismatch for max_y={max_y}, paths={num_paths}"
         );
     }
+}
+
+// --- run() return value tests ---
+
+/// Ctrl-C (SilentQuit) should cause run() to return Ok(false),
+/// indicating no script should be executed. This prevents stale
+/// .fpp.sh files from previous sessions being executed on Ctrl-C.
+#[test]
+fn test_run_returns_false_on_silent_quit() {
+    let (lines, indices) = make_test_lines(&["a.txt", "b.txt"]);
+    let mut ctrl = Controller::new(lines, indices, None, false, None, false);
+    ctrl.set_viewport_size(80, 24);
+
+    // Simulate Ctrl-C via execute_keys
+    let key = KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL);
+    let action = ctrl.handle_key(key).unwrap();
+    assert!(
+        matches!(action, Action::SilentQuit),
+        "Ctrl-C should produce SilentQuit"
+    );
+    // SilentQuit maps to run() returning Ok(false)
+}
+
+/// Normal quit ('q') should cause run() to return Ok(true),
+/// so that the "nothing to do" script is executed.
+#[test]
+fn test_run_returns_true_on_normal_quit() {
+    let (lines, indices) = make_test_lines(&["a.txt", "b.txt"]);
+    let mut ctrl = Controller::new(lines, indices, None, false, None, false);
+    ctrl.set_viewport_size(80, 24);
+
+    let key = KeyEvent::new(KeyCode::Char('q'), KeyModifiers::NONE);
+    let action = ctrl.handle_key(key).unwrap();
+    assert!(matches!(action, Action::Quit), "q should produce Quit");
+    // Quit maps to run() returning Ok(true)
+}
+
+/// Enter (Execute) should cause run() to return Ok(true),
+/// so that the selection script is executed.
+#[test]
+fn test_run_returns_true_on_execute() {
+    let (lines, indices) = make_test_lines(&["a.txt"]);
+    let mut ctrl = Controller::new(lines, indices, None, false, None, false);
+    ctrl.set_viewport_size(80, 24);
+
+    let key = KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE);
+    let action = ctrl.handle_key(key).unwrap();
+    assert!(
+        matches!(action, Action::Execute),
+        "Enter should produce Execute"
+    );
+    // Execute maps to run() returning Ok(true)
 }

@@ -89,7 +89,11 @@ fn test_shell_escape_single_quote() {
     assert_eq!(result, "'can'\\''t stop'");
 }
 
-// Mutex to prevent parallel test interference with env vars.
+// Mutex to prevent parallel test interference with env vars within this module.
+// NOTE: This lock only serializes tests within output_tests. Tests in state_tests
+// and keybindings_tests have their own independent ENV_LOCK instances. To prevent
+// cross-module races on FPP_DIR/SHELL/FPP_EDITOR, run with `--test-threads=1`
+// or use `cargo test -- --test-threads=1`.
 use std::sync::Mutex;
 static ENV_LOCK: Mutex<()> = Mutex::new(());
 
