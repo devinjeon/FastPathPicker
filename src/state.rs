@@ -5,8 +5,6 @@ use std::path::PathBuf;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
-use crate::logger;
-
 /// Selection state persisted between sessions.
 #[derive(Debug, Serialize, Deserialize, Default)]
 pub struct SelectionState {
@@ -108,17 +106,17 @@ pub fn clean_state() -> Result<usize> {
     Ok(count)
 }
 
-/// Write the output shell script.
-/// Python: write_to_file calls logger.output() after writing.
+/// Write the output shell script (truncate + write).
+/// Callers should call `logger::output()` once after all script writes are complete,
+/// rather than on every individual write, to avoid repeated I/O.
 pub fn write_script(content: &str) -> Result<()> {
     ensure_state_dir()?;
     fs::write(get_script_output_path(), format!("{content}\n"))?;
-    let _ = logger::output();
     Ok(())
 }
 
 /// Append to the output shell script.
-/// Python: append_to_file calls logger.output() after appending.
+/// Callers should call `logger::output()` once after all script writes are complete.
 pub fn append_script(content: &str) -> Result<()> {
     use std::io::Write;
     ensure_state_dir()?;
@@ -128,7 +126,6 @@ pub fn append_script(content: &str) -> Result<()> {
         .append(true)
         .open(path)?;
     writeln!(file, "{content}")?;
-    let _ = logger::output();
     Ok(())
 }
 

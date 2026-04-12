@@ -36,7 +36,9 @@ pub fn exec_composed_command(command: &str, line_objs: &[LineMatch]) -> Result<(
     append_alias_expansion()?;
     append_if_invalid(line_objs)?;
     append_friendly_command(&composed)?;
-    append_exit()
+    append_exit()?;
+    let _ = logger::output();
+    Ok(())
 }
 
 /// Open selected files in the user's editor.
@@ -49,7 +51,9 @@ fn edit_files(line_objs: &[LineMatch]) -> Result<()> {
     let command = join_files_into_command(&files_and_nums);
     append_if_invalid(line_objs)?;
     state::append_script(&command)?;
-    append_exit()
+    append_exit()?;
+    let _ = logger::output();
+    Ok(())
 }
 
 /// Build the editor command with file paths and line numbers.
@@ -266,14 +270,18 @@ fn shell_escape(s: &str) -> String {
 /// Output "nothing to do" and exit (used when user presses 'q').
 pub fn output_nothing() -> Result<()> {
     state::write_script("")?;
-    state::append_script("echo \"nothing to do!\"; exit 1")
+    state::append_script("echo \"nothing to do!\"; exit 1")?;
+    let _ = logger::output();
+    Ok(())
 }
 
 /// Output "No lines matched!" (used when no matches found, like Python's choose.py).
 pub fn output_no_matches() -> Result<()> {
     state::write_script("")?;
     state::append_script("echo \"No lines matched!\";")?;
-    append_exit()
+    append_exit()?;
+    let _ = logger::output();
+    Ok(())
 }
 
 #[cfg(test)]

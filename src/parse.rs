@@ -91,8 +91,8 @@ static MASTER_REGEX_WITH_SPACES_AND_WEIRD_FILES: LazyLock<Regex> = LazyLock::new
 
 // --- Regex Waterfall ---
 
-static REGEX_WATERFALL: LazyLock<Vec<RegexConfig>> = LazyLock::new(|| {
-    vec![
+static REGEX_WATERFALL: LazyLock<[RegexConfig; 13]> = LazyLock::new(|| {
+    [
         RegexConfig {
             regex: &HOMEDIR_REGEX,
             preferred_regex: None,

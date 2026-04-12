@@ -6,8 +6,16 @@
 use std::sync::Mutex;
 
 use anyhow::Result;
+use serde::Serialize;
 
 use crate::state;
+
+#[derive(Serialize)]
+struct LogEntry {
+    unixname: String,
+    num: Option<usize>,
+    eventname: String,
+}
 
 static EVENTS: Mutex<Vec<(String, Option<usize>)>> = Mutex::new(Vec::new());
 
@@ -22,7 +30,7 @@ pub fn add_event(event: &str, number: Option<usize>) {
 /// Write accumulated events to .fpp.log as JSON.
 pub fn output() -> Result<()> {
     let events = match EVENTS.lock() {
-        Ok(e) => e.clone(),
+        Ok(mut e) => std::mem::take(&mut *e),
         Err(e) => {
             eprintln!("fpp: logger EVENTS mutex poisoned in output: {e}");
             return Ok(());
@@ -33,55 +41,20 @@ pub fn output() -> Result<()> {
         .or_else(|_| std::env::var("LOGNAME"))
         .unwrap_or_else(|_| "unknown".to_string());
 
-    let json_entries: Vec<String> = events
-        .iter()
-        .map(|(eventname, num)| {
-            let num_str = match num {
-                Some(n) => n.to_string(),
-                None => "null".to_string(),
-            };
-            // Escape all special JSON characters to prevent malformed JSON from
-            // env vars or event names containing quotes, backslashes, or control chars.
-            let escaped_user = json_escape(&username);
-            let escaped_event = json_escape(eventname);
-            format!(
-                r#"{{"unixname": "{}", "num": {}, "eventname": "{}"}}"#,
-                escaped_user, num_str, escaped_event
-            )
+    let entries: Vec<LogEntry> = events
+        .into_iter()
+        .map(|(eventname, num)| LogEntry {
+            unixname: username.clone(),
+            num,
+            eventname,
         })
         .collect();
 
-    let json_output = format!("[{}]", json_entries.join(", "));
+    let json_output = serde_json::to_string(&entries)?;
     let log_path = state::get_state_dir().join(".fpp.log");
     state::ensure_state_dir()?;
     std::fs::write(log_path, json_output)?;
     Ok(())
-}
-
-/// Escape a string for safe inclusion in a JSON string value.
-/// Handles backslash, double-quote, and control characters (newline, tab, carriage return,
-/// null byte, and other C0 controls).
-fn json_escape(s: &str) -> String {
-    use std::fmt::Write;
-    let mut out = String::with_capacity(s.len());
-    for ch in s.chars() {
-        match ch {
-            '\\' => out.push_str("\\\\"),
-            '"' => out.push_str("\\\""),
-            '\n' => out.push_str("\\n"),
-            '\t' => out.push_str("\\t"),
-            '\r' => out.push_str("\\r"),
-            c if c.is_control() => {
-                // Encode other control characters as \uXXXX
-                for unit in c.encode_utf16(&mut [0; 2]) {
-                    // write! to String is infallible, unwrap is safe
-                    write!(out, "\\u{unit:04x}").unwrap();
-                }
-            }
-            c => out.push(c),
-        }
-    }
-    out
 }
 
 /// Clear the log file.
@@ -98,52 +71,35 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_json_escape_backslash() {
-        assert_eq!(json_escape(r"a\b"), r"a\\b");
+    fn test_serde_json_escaping() {
+        // Verify serde_json handles special characters correctly
+        let entry = LogEntry {
+            unixname: "user\"with\\special\nchars".to_string(),
+            num: Some(42),
+            eventname: "test\tevent".to_string(),
+        };
+        let json = serde_json::to_string(&entry).unwrap();
+        assert!(json.contains(r#"\"#));
+        assert!(json.contains("42"));
+        // Verify it's valid JSON by round-tripping
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed["num"], 42);
     }
 
     #[test]
-    fn test_json_escape_double_quote() {
-        assert_eq!(json_escape(r#"say "hello""#), r#"say \"hello\""#);
+    fn test_serde_json_null_num() {
+        let entry = LogEntry {
+            unixname: "user".to_string(),
+            num: None,
+            eventname: "event".to_string(),
+        };
+        let json = serde_json::to_string(&entry).unwrap();
+        assert!(json.contains("null"));
     }
 
-    #[test]
-    fn test_json_escape_newline_tab_cr() {
-        assert_eq!(json_escape("a\nb\tc\rd"), r"a\nb\tc\rd");
-    }
-
-    #[test]
-    fn test_json_escape_control_chars() {
-        // Null byte
-        assert_eq!(json_escape("\x00"), r"\u0000");
-        // Bell
-        assert_eq!(json_escape("\x07"), r"\u0007");
-        // Form feed
-        assert_eq!(json_escape("\x0c"), r"\u000c");
-        // Escape char (0x1b)
-        assert_eq!(json_escape("\x1b"), r"\u001b");
-    }
-
-    #[test]
-    fn test_json_escape_plain_text() {
-        assert_eq!(json_escape("hello world"), "hello world");
-    }
-
-    #[test]
-    fn test_json_escape_mixed() {
-        assert_eq!(
-            json_escape("line1\nline2\t\"quoted\"\\\x00end"),
-            r#"line1\nline2\t\"quoted\"\\\u0000end"#
-        );
-    }
-
-    // NOTE: This test sets/removes FPP_DIR without an ENV_LOCK mutex.
-    // Unlike state_tests and output_tests which have their own ENV_LOCK,
-    // this module only has a single env-mutating test so a lock is not
-    // strictly necessary. However, to avoid cross-module races on FPP_DIR,
-    // run with `--test-threads=1`.
     #[test]
     fn test_add_event_and_output() {
+        let _guard = crate::test_env::ENV_LOCK.lock().unwrap();
         let tmp = tempfile::tempdir().unwrap();
         std::env::set_var("FPP_DIR", tmp.path().to_str().unwrap());
 
@@ -165,6 +121,10 @@ mod tests {
         assert!(content.contains("42"));
         assert!(content.contains("another_event"));
         assert!(content.contains("null"));
+
+        // Verify the output is valid JSON
+        let parsed: Vec<serde_json::Value> = serde_json::from_str(&content).unwrap();
+        assert_eq!(parsed.len(), 2);
 
         // Clean up
         if let Ok(mut events) = EVENTS.lock() {
