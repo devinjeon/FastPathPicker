@@ -98,9 +98,10 @@ pub fn clean_state() -> Result<usize> {
     ];
     let mut count = 0;
     for path in &state_files {
-        if path.exists() {
-            fs::remove_file(path)?;
-            count += 1;
+        match fs::remove_file(path) {
+            Ok(()) => count += 1,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => return Err(e.into()),
         }
     }
     Ok(count)
@@ -130,12 +131,14 @@ pub fn append_script(content: &str) -> Result<()> {
 }
 
 /// Delete selection state file.
+/// Uses remove_file + ignore NotFound instead of exists() check to avoid TOCTOU race.
 pub fn delete_selection() -> Result<()> {
     let path = get_selection_path();
-    if path.exists() {
-        fs::remove_file(path)?;
+    match fs::remove_file(path) {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(e.into()),
     }
-    Ok(())
 }
 
 #[cfg(test)]
