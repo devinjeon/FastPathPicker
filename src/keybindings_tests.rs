@@ -1,5 +1,7 @@
 use super::*;
 
+use crate::test_env::ENV_LOCK;
+
 #[test]
 fn test_empty_config() {
     let bindings = parse_key_bindings("");
@@ -28,6 +30,7 @@ fn test_no_bindings_section() {
 /// read_key_bindings() should return an empty list for a non-existent file.
 #[test]
 fn test_ignore_non_existing_configuration_file() {
+    let _guard = ENV_LOCK.lock().unwrap();
     // Temporarily set FPP_DIR to a temp directory with no .fpp.keys file.
     let tmp = std::env::temp_dir().join("fpp_test_no_keybindings");
     let _ = std::fs::create_dir_all(&tmp);

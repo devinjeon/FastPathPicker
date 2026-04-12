@@ -97,3 +97,75 @@ fn test_get_file_description_nonexistent() {
     let desc = m.get_file_description();
     assert!(desc.iter().any(|s| s.contains("Unable to read metadata")));
 }
+
+#[test]
+fn test_toggle_select() {
+    let mut m = make_line_match("src/main.rs");
+    assert!(!m.selected);
+    m.toggle_select();
+    assert!(m.selected);
+    m.toggle_select();
+    assert!(!m.selected);
+}
+
+#[test]
+fn test_get_dir_with_parent() {
+    let m = make_line_match("/usr/local/bin/test.rs");
+    assert_eq!(m.get_dir(), "/usr/local/bin");
+}
+
+#[test]
+fn test_get_dir_file_only() {
+    let m = make_line_match("test.rs");
+    // Path::parent() of "test.rs" returns "" (empty string)
+    assert_eq!(m.get_dir(), "");
+}
+
+#[test]
+fn test_get_dir_root() {
+    let m = make_line_match("/test.rs");
+    assert_eq!(m.get_dir(), "/");
+}
+
+#[test]
+fn test_get_dir_relative() {
+    let m = make_line_match("./src/main.rs");
+    assert_eq!(m.get_dir(), "./src");
+}
+
+#[test]
+fn test_is_resolvable() {
+    let normal = make_line_match("src/main.rs");
+    assert!(normal.is_resolvable());
+
+    let abbreviated = make_line_match(".../some/path.rs");
+    assert!(!abbreviated.is_resolvable());
+}
+
+#[test]
+fn test_is_git_abbreviated_path() {
+    let normal = make_line_match("src/main.rs");
+    assert!(!normal.is_git_abbreviated_path());
+
+    let abbreviated = make_line_match(".../some/path.rs");
+    assert!(abbreviated.is_git_abbreviated_path());
+}
+
+#[test]
+fn test_get_line_num() {
+    let m = LineMatch::new(
+        FormattedText::new("file.rs:42"),
+        "file.rs".to_string(),
+        42,
+        "file.rs:42".to_string(),
+        0,
+        10,
+    );
+    assert_eq!(m.get_line_num(), 42);
+}
+
+#[test]
+fn test_get_path() {
+    let m = make_line_match("src/main.rs");
+    assert_eq!(m.get_path(), "src/main.rs");
+}

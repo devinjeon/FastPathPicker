@@ -1074,3 +1074,33 @@ fn test_run_returns_true_on_execute() {
     );
     // Execute maps to run() returning Ok(true)
 }
+
+/// Terminal too small: render_to should not panic and should show message.
+#[test]
+fn test_render_tiny_terminal_no_panic() {
+    let (lines, indices) = make_test_lines(&["a.txt", "b.txt"]);
+    let ctrl = Controller::new(lines, indices, None, false, None, false);
+    let mut buf = Vec::new();
+    // Very small terminal: height=3, width=8
+    ctrl.render_to(&mut buf, (8, 3)).unwrap();
+    let output = String::from_utf8_lossy(&buf);
+    assert!(
+        output.contains("Terminal too small"),
+        "Should show 'Terminal too small' for tiny terminal"
+    );
+}
+
+/// Slightly larger terminal (just at boundary): should render normally.
+#[test]
+fn test_render_minimum_viable_terminal() {
+    let (lines, indices) = make_test_lines(&["a.txt"]);
+    let ctrl = Controller::new(lines, indices, None, false, None, false);
+    let mut buf = Vec::new();
+    // Minimum viable: height=5, width=10
+    ctrl.render_to(&mut buf, (10, 5)).unwrap();
+    let output = String::from_utf8_lossy(&buf);
+    assert!(
+        !output.contains("Terminal too small"),
+        "Should render normally at minimum viable size"
+    );
+}

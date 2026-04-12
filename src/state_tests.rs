@@ -1,11 +1,6 @@
 use super::*;
-use std::sync::Mutex;
 
-// Prevent parallel tests from interfering with FPP_DIR env var within this module.
-// NOTE: This lock only serializes tests within state_tests. Tests in output_tests
-// and keybindings_tests have their own independent ENV_LOCK instances. To prevent
-// cross-module races on FPP_DIR, run with `--test-threads=1`.
-static ENV_LOCK: Mutex<()> = Mutex::new(());
+use crate::test_env::ENV_LOCK;
 
 #[test]
 fn test_save_and_load_selection() {
@@ -148,6 +143,42 @@ fn test_delete_selection_not_exists() {
 
     // Should not error when file doesn't exist
     delete_selection().unwrap();
+
+    env::remove_var("FPP_DIR");
+}
+
+#[test]
+fn test_write_script_truncates() {
+    let _guard = ENV_LOCK.lock().unwrap();
+    let tmp = tempfile::tempdir().unwrap();
+    env::set_var("FPP_DIR", tmp.path().to_str().unwrap());
+
+    write_script("first content").unwrap();
+    let content = fs::read_to_string(get_script_output_path()).unwrap();
+    assert_eq!(content, "first content\n");
+
+    // write_script should truncate previous content
+    write_script("second").unwrap();
+    let content = fs::read_to_string(get_script_output_path()).unwrap();
+    assert_eq!(content, "second\n");
+
+    env::remove_var("FPP_DIR");
+}
+
+#[test]
+fn test_append_script() {
+    let _guard = ENV_LOCK.lock().unwrap();
+    let tmp = tempfile::tempdir().unwrap();
+    env::set_var("FPP_DIR", tmp.path().to_str().unwrap());
+
+    write_script("#!/bin/bash").unwrap();
+    append_script("echo hello").unwrap();
+    append_script("echo world").unwrap();
+
+    let content = fs::read_to_string(get_script_output_path()).unwrap();
+    assert!(content.contains("#!/bin/bash"));
+    assert!(content.contains("echo hello"));
+    assert!(content.contains("echo world"));
 
     env::remove_var("FPP_DIR");
 }
