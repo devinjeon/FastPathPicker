@@ -283,8 +283,7 @@ fn match_line_impl(
         };
 
         if let Some(preferred) = config.preferred_regex {
-            let preferred_regex: &Regex = preferred;
-            if let Some(preferred_captures) = preferred_regex.captures(line) {
+            if let Some(preferred_captures) = preferred.captures(line) {
                 let main_start = captures.get(0).map_or(0, |m| m.start());
                 let pref_start = preferred_captures.get(0).map_or(0, |m| m.start());
                 if pref_start < main_start {
@@ -405,7 +404,7 @@ fn expand_home(path: &str) -> String {
     }
 }
 
-fn get_repos() -> &'static Vec<String> {
+fn get_repos() -> &'static [String] {
     static REPOS: LazyLock<Vec<String>> = LazyLock::new(|| {
         let mut repos = vec![
             "www".to_string(),

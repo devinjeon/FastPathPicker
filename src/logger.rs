@@ -1,8 +1,6 @@
 //! Event logger matching Python PathPicker's logger.py.
 //! Accumulates events and writes JSON to .fpp.log on output().
 
-#![allow(dead_code)]
-
 use std::sync::Mutex;
 
 use anyhow::Result;
@@ -58,6 +56,7 @@ pub fn output() -> Result<()> {
 }
 
 /// Clear the log file.
+#[allow(dead_code)]
 pub fn clear() -> Result<()> {
     let log_path = state::get_state_dir().join(".fpp.log");
     if log_path.exists() {

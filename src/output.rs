@@ -62,7 +62,10 @@ fn join_files_into_command(files_and_nums: &[(&str, u64)]) -> String {
     let mut cmd = format!("{editor_path} ");
 
     if editor == "vim -p" {
-        // vim -p mode: no quoting on paths (like Python)
+        // vim -p mode: paths are NOT shell-escaped here. This matches the original
+        // Python PathPicker behavior (choose.py join_files_into_command), where vim -p
+        // and split mode paths are passed unquoted inside +\"...\" vim commands.
+        // Changing this would break compatibility with the Python implementation.
         if let Some((first_path, first_num)) = files_and_nums.first() {
             cmd.push_str(&format!(" +{first_num} {first_path}"));
             for (path, num) in &files_and_nums[1..] {
@@ -75,7 +78,7 @@ fn join_files_into_command(files_and_nums: &[(&str, u64)]) -> String {
             .filter(|v| !v.is_empty())
             .is_none()
     {
-        // vim split mode: no quoting on paths (like Python)
+        // vim split mode: paths are NOT shell-escaped (same as Python PathPicker).
         if let Some((first_path, first_num)) = files_and_nums.first() {
             cmd.push_str(&format!(" +{first_num} {first_path}"));
             for (path, num) in &files_and_nums[1..] {
