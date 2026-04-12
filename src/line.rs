@@ -204,7 +204,10 @@ fn format_system_time_local(time: SystemTime) -> String {
     let duration = time
         .duration_since(SystemTime::UNIX_EPOCH)
         .unwrap_or_default();
-    let total_secs = duration.as_secs() as i64;
+    // Use 0 as fallback for timestamps beyond i64::MAX (year 2262+) to safely
+    // produce "01/01/1970" rather than entering the year-calculation loop with
+    // an astronomically large value.
+    let total_secs = i64::try_from(duration.as_secs()).unwrap_or(0);
 
     // Get local timezone offset (approximate: use libc on Unix)
     let local_secs = total_secs + get_utc_offset(total_secs);
@@ -291,38 +294,82 @@ fn format_size_python(bytes: u64) -> String {
 #[path = "line_tests.rs"]
 mod tests;
 
-/// Get username from uid (Unix only).
-///
-/// SAFETY: `getpwuid` returns a pointer to static storage that may be overwritten
-/// by subsequent calls to `getpwuid`, `getpwnam`, or `endpwent`. This is safe here
-/// because we immediately copy the name into an owned String before returning, and
-/// fpp2 runs all UI/metadata logic on a single thread (no concurrent calls).
+/// Maximum buffer size for getpwuid_r/getgrgid_r to prevent unbounded growth.
+#[cfg(unix)]
+const LOOKUP_BUF_MAX: usize = 1 << 20; // 1 MB
+
+/// Get username from uid (Unix only) using the reentrant `getpwuid_r`.
 #[cfg(unix)]
 fn get_username(uid: u32) -> Option<String> {
-    unsafe {
-        let pw = libc::getpwuid(uid);
-        if pw.is_null() {
-            return None;
+    let mut buf = vec![0u8; 1024];
+    let mut pwd: libc::passwd = unsafe { std::mem::zeroed() };
+    let mut result: *mut libc::passwd = std::ptr::null_mut();
+
+    loop {
+        // SAFETY: getpwuid_r is thread-safe (reentrant). We provide a buffer for
+        // the function to write into, avoiding the static storage issue of getpwuid.
+        let ret = unsafe {
+            libc::getpwuid_r(
+                uid,
+                &mut pwd,
+                buf.as_mut_ptr() as *mut libc::c_char,
+                buf.len(),
+                &mut result,
+            )
+        };
+        if ret == libc::ERANGE {
+            if buf.len() >= LOOKUP_BUF_MAX {
+                return None;
+            }
+            buf.resize(buf.len() * 2, 0);
+            result = std::ptr::null_mut();
+            continue;
         }
-        let name = std::ffi::CStr::from_ptr((*pw).pw_name);
-        Some(name.to_string_lossy().into_owned())
+        break;
     }
+
+    if result.is_null() {
+        return None;
+    }
+    // SAFETY: result is non-null and points to pwd which is backed by buf.
+    let name = unsafe { std::ffi::CStr::from_ptr(pwd.pw_name) };
+    Some(name.to_string_lossy().into_owned())
 }
 
-/// Get group name from gid (Unix only).
-///
-/// SAFETY: `getgrgid` returns a pointer to static storage that may be overwritten
-/// by subsequent calls to `getgrgid`, `getgrnam`, or `endgrent`. This is safe here
-/// because we immediately copy the name into an owned String before returning, and
-/// fpp2 runs all UI/metadata logic on a single thread (no concurrent calls).
+/// Get group name from gid (Unix only) using the reentrant `getgrgid_r`.
 #[cfg(unix)]
 fn get_groupname(gid: u32) -> Option<String> {
-    unsafe {
-        let gr = libc::getgrgid(gid);
-        if gr.is_null() {
-            return None;
+    let mut buf = vec![0u8; 1024];
+    let mut grp: libc::group = unsafe { std::mem::zeroed() };
+    let mut result: *mut libc::group = std::ptr::null_mut();
+
+    loop {
+        // SAFETY: getgrgid_r is thread-safe (reentrant). We provide a buffer for
+        // the function to write into, avoiding the static storage issue of getgrgid.
+        let ret = unsafe {
+            libc::getgrgid_r(
+                gid,
+                &mut grp,
+                buf.as_mut_ptr() as *mut libc::c_char,
+                buf.len(),
+                &mut result,
+            )
+        };
+        if ret == libc::ERANGE {
+            if buf.len() >= LOOKUP_BUF_MAX {
+                return None;
+            }
+            buf.resize(buf.len() * 2, 0);
+            result = std::ptr::null_mut();
+            continue;
         }
-        let name = std::ffi::CStr::from_ptr((*gr).gr_name);
-        Some(name.to_string_lossy().into_owned())
+        break;
     }
+
+    if result.is_null() {
+        return None;
+    }
+    // SAFETY: result is non-null and points to grp which is backed by buf.
+    let name = unsafe { std::ffi::CStr::from_ptr(grp.gr_name) };
+    Some(name.to_string_lossy().into_owned())
 }
