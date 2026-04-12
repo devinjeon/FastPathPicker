@@ -680,14 +680,14 @@ impl Controller {
         // First pass (immutable): collect indices of the first occurrence of each unique path.
         // We compare by string value (not pointer address) to correctly deduplicate paths
         // that have the same content but different String allocations.
-        let mut seen_paths = std::collections::HashSet::new();
+        let mut seen_paths: std::collections::HashSet<String> = std::collections::HashSet::new();
         let toggle_indices: Vec<usize> = self
             .match_indices
             .iter()
             .filter(|&&idx| {
                 self.lines[idx]
                     .as_match()
-                    .is_some_and(|m| seen_paths.insert(m.path.as_str()))
+                    .is_some_and(|m| seen_paths.insert(m.path.clone()))
             })
             .copied()
             .collect();
@@ -840,11 +840,7 @@ impl Controller {
                 }
                 if in_xmode && row < (height as usize).saturating_sub(1) {
                     if let Some(label) = quick_select::get_label(row) {
-                        queue!(
-                            writer,
-                            cursor::MoveTo(1, row as u16),
-                            style::Print(label.to_string()),
-                        )?;
+                        queue!(writer, cursor::MoveTo(1, row as u16), style::Print(label),)?;
                     }
                 }
             }
@@ -905,11 +901,7 @@ impl Controller {
         // between the label and any scrollbar at column 0.
         if in_xmode {
             if let Some(label) = quick_select::get_label(row) {
-                queue!(
-                    writer,
-                    cursor::MoveTo(1, row as u16),
-                    style::Print(label.to_string()),
-                )?;
+                queue!(writer, cursor::MoveTo(1, row as u16), style::Print(label),)?;
             }
             if !has_scrollbar {
                 let content_x = chrome.content_start_x(has_scrollbar, in_xmode);
@@ -918,151 +910,11 @@ impl Controller {
         }
 
         // Line content — track printed columns for space-padding (no ClearType needed).
-        let is_selected = line.as_match().is_some_and(|m| m.selected);
-        let mut printed_cols: usize = 0;
-
-        if let Some(m) = line.as_match() {
-            let plain = m.formatted_text.plain_text();
-            let plain_len = plain.chars().count();
-            let ms = m.match_start.min(plain_len);
-            let me = m.match_end.min(plain_len);
-
-            let (before_raw, rest_raw) = m.formatted_text.breakat(ms);
-            let (_matched_raw, after_raw) = {
-                let rest_ft = crate::format::FormattedText::new(&rest_raw);
-                let match_len = me - ms;
-                rest_ft.breakat(match_len)
-            };
-
-            let before_plain: String = plain.chars().take(ms).collect();
-            let matched_plain: String = plain.chars().skip(ms).take(me - ms).collect();
-            let after_plain: String = plain.chars().skip(me).collect();
-
-            let arrow = if is_selected { "|===>" } else { "" };
-            let max_len = text_width;
-
-            let combined = format!("{arrow}{matched_plain}");
-            let important_len = before_plain.chars().count() + combined.chars().count();
-            let is_truncated = important_len > max_len;
-            let truncated_combined;
-            if is_truncated {
-                let space_allowed = max_len
-                    .saturating_sub(TRUNCATE_DECORATOR.len())
-                    .saturating_sub(arrow.len())
-                    .saturating_sub(before_plain.chars().count());
-                if space_allowed > 1 {
-                    let mid = space_allowed / 2;
-                    let combined_chars: Vec<char> = combined.chars().collect();
-                    let total = combined_chars.len();
-                    let begin: String = combined_chars[..mid].iter().collect();
-                    let end: String = combined_chars[total.saturating_sub(mid)..].iter().collect();
-                    truncated_combined = format!("{begin}{TRUNCATE_DECORATOR}{end}");
-                } else {
-                    truncated_combined = combined;
-                }
-            } else {
-                truncated_combined = combined;
-            }
-
-            let before_display = if m.formatted_text.has_ansi() {
-                let ft = crate::format::FormattedText::new(&before_raw);
-                ft.raw_truncated(max_len)
-            } else {
-                before_plain.chars().take(max_len).collect::<String>()
-            };
-            let before_printed = if m.formatted_text.has_ansi() {
-                crate::format::visible_char_count(&before_display)
-            } else {
-                before_display.chars().count()
-            };
-            queue!(writer, style::Print(&before_display))?;
-            printed_cols += before_printed;
-            if m.formatted_text.has_ansi() {
-                queue!(writer, style::Print("\x1b[0m"))?;
-            }
-
-            if is_hovered && m.selected {
-                queue!(
-                    writer,
-                    SetBackgroundColor(Color::Red),
-                    SetForegroundColor(Color::White),
-                    SetAttribute(Attribute::Bold),
-                )?;
-            } else if is_hovered {
-                queue!(
-                    writer,
-                    SetBackgroundColor(Color::Blue),
-                    SetForegroundColor(Color::White),
-                    SetAttribute(Attribute::Bold),
-                )?;
-            } else if m.selected {
-                queue!(
-                    writer,
-                    SetBackgroundColor(Color::Green),
-                    SetForegroundColor(Color::White),
-                    SetAttribute(Attribute::Bold),
-                )?;
-            } else if !self.all_input {
-                queue!(writer, SetAttribute(Attribute::Underlined))?;
-            }
-
-            let remaining = max_len.saturating_sub(before_printed);
-            let match_display: String = truncated_combined.chars().take(remaining).collect();
-            let match_printed = match_display.chars().count();
-            queue!(writer, style::Print(&match_display))?;
-            printed_cols += match_printed;
-
-            queue!(
-                writer,
-                SetBackgroundColor(Color::Reset),
-                SetForegroundColor(Color::Reset),
-                SetAttribute(Attribute::Reset),
-            )?;
-
-            let after_remaining = remaining.saturating_sub(match_printed);
-            if after_remaining > 0 {
-                let after_display = if m.formatted_text.has_ansi() {
-                    let ft = crate::format::FormattedText::new(&after_raw);
-                    let result = ft.raw_truncated(after_remaining);
-                    format!("{result}\x1b[0m")
-                } else {
-                    after_plain
-                        .chars()
-                        .take(after_remaining)
-                        .collect::<String>()
-                };
-                let after_printed = if m.formatted_text.has_ansi() {
-                    crate::format::visible_char_count(&after_display)
-                } else {
-                    after_display.chars().count()
-                };
-                queue!(writer, style::Print(&after_display))?;
-                printed_cols += after_printed;
-            }
-            // Reset any ANSI attributes from the original line content before padding,
-            // preventing color bleed into space-padding or subsequent content.
-            if m.formatted_text.has_ansi() {
-                queue!(writer, style::Print("\x1b[0m"))?;
-            }
+        let printed_cols = if let Some(m) = line.as_match() {
+            self.render_match_line(writer, m, is_hovered, text_width)?
         } else {
-            let ft = line.formatted_text();
-            let display = if ft.has_ansi() {
-                ft.raw_truncated(text_width)
-            } else {
-                ft.plain_text().chars().take(text_width).collect::<String>()
-            };
-            let display_len = if ft.has_ansi() {
-                crate::format::visible_char_count(&display)
-            } else {
-                display.chars().count()
-            };
-            queue!(writer, style::Print(&display))?;
-            printed_cols += display_len;
-            // Reset ANSI after simple line content to prevent color bleed.
-            if ft.has_ansi() {
-                queue!(writer, style::Print("\x1b[0m"))?;
-            }
-        }
+            Self::render_simple_line(writer, line, text_width)?
+        };
 
         if use_space_padding {
             // Pad remaining content area with spaces instead of ClearType::UntilNewLine.
@@ -1091,6 +943,199 @@ impl Controller {
             queue!(writer, terminal::Clear(ClearType::UntilNewLine))?;
         }
         Ok(())
+    }
+
+    /// Truncate the combined arrow+match text when the line exceeds `max_len`.
+    ///
+    /// Returns the (possibly truncated) combined string. Truncation uses the
+    /// `|...|` decorator, splitting the text into front and back halves.
+    fn truncate_match_text(
+        combined: &str,
+        arrow_len: usize,
+        match_start: usize,
+        max_len: usize,
+    ) -> String {
+        let combined_char_count = combined.chars().count();
+        let important_len = match_start + combined_char_count;
+        if important_len <= max_len {
+            return combined.to_string();
+        }
+
+        let space_allowed = max_len
+            .saturating_sub(TRUNCATE_DECORATOR.len())
+            .saturating_sub(arrow_len)
+            .saturating_sub(match_start);
+        if space_allowed > 1 && combined_char_count > space_allowed {
+            let mid = space_allowed / 2;
+            let combined_chars: Vec<char> = combined.chars().collect();
+            let total = combined_chars.len();
+            let front = mid.min(total);
+            let back = mid.min(total);
+            let begin: String = combined_chars[..front].iter().collect();
+            let end: String = combined_chars[total.saturating_sub(back)..]
+                .iter()
+                .collect();
+            format!("{begin}{TRUNCATE_DECORATOR}{end}")
+        } else {
+            combined.to_string()
+        }
+    }
+
+    /// Render a match line (before-segment, highlighted match, after-segment).
+    ///
+    /// Returns the number of visible columns printed.
+    fn render_match_line(
+        &self,
+        writer: &mut impl Write,
+        m: &LineMatch,
+        is_hovered: bool,
+        max_len: usize,
+    ) -> Result<usize> {
+        let plain = m.formatted_text.plain_text();
+        let plain_len = plain.chars().count();
+        let ms = m.match_start.min(plain_len);
+        let me = m.match_end.min(plain_len);
+
+        let (before_raw, rest_raw) = m.formatted_text.breakat(ms);
+        let (_matched_raw, after_raw) = {
+            let rest_ft = crate::format::FormattedText::new(&rest_raw);
+            let match_len = me - ms;
+            rest_ft.breakat(match_len)
+        };
+
+        let before_plain: String = plain.chars().take(ms).collect();
+        let matched_plain: String = plain.chars().skip(ms).take(me - ms).collect();
+        let after_plain: String = plain.chars().skip(me).collect();
+
+        let arrow = if m.selected { "|===>" } else { "" };
+
+        // NOTE: We perform truncation on plain text here rather than using
+        // FormattedText::raw_truncated_with_decorator because the matched
+        // portion is rendered with crossterm's SetForegroundColor (not ANSI
+        // codes embedded in the string). The three segments (before, match,
+        // after) are styled and printed independently, so truncation must
+        // operate on the decomposed plain-text pieces to correctly account
+        // for the selection arrow prefix and per-segment column budgets.
+        // raw_truncated_with_decorator works on a single contiguous
+        // ANSI-bearing string and cannot handle this multi-segment layout.
+        let combined = format!("{arrow}{matched_plain}");
+        let truncated_combined = Self::truncate_match_text(&combined, arrow.len(), ms, max_len);
+
+        let mut printed_cols: usize = 0;
+
+        // Before-segment
+        let before_display = if m.formatted_text.has_ansi() {
+            let ft = crate::format::FormattedText::new(&before_raw);
+            ft.raw_truncated(max_len)
+        } else {
+            before_plain.chars().take(max_len).collect::<String>()
+        };
+        let before_printed = if m.formatted_text.has_ansi() {
+            crate::format::visible_char_count(&before_display)
+        } else {
+            before_display.chars().count()
+        };
+        queue!(writer, style::Print(&before_display))?;
+        printed_cols += before_printed;
+        if m.formatted_text.has_ansi() {
+            queue!(writer, style::Print("\x1b[0m"))?;
+        }
+
+        // Match highlight style
+        if is_hovered && m.selected {
+            queue!(
+                writer,
+                SetBackgroundColor(Color::Red),
+                SetForegroundColor(Color::White),
+                SetAttribute(Attribute::Bold),
+            )?;
+        } else if is_hovered {
+            queue!(
+                writer,
+                SetBackgroundColor(Color::Blue),
+                SetForegroundColor(Color::White),
+                SetAttribute(Attribute::Bold),
+            )?;
+        } else if m.selected {
+            queue!(
+                writer,
+                SetBackgroundColor(Color::Green),
+                SetForegroundColor(Color::White),
+                SetAttribute(Attribute::Bold),
+            )?;
+        } else if !self.all_input {
+            queue!(writer, SetAttribute(Attribute::Underlined))?;
+        }
+
+        // Match segment
+        let remaining = max_len.saturating_sub(before_printed);
+        let match_display: String = truncated_combined.chars().take(remaining).collect();
+        let match_printed = match_display.chars().count();
+        queue!(writer, style::Print(&match_display))?;
+        printed_cols += match_printed;
+
+        queue!(
+            writer,
+            SetBackgroundColor(Color::Reset),
+            SetForegroundColor(Color::Reset),
+            SetAttribute(Attribute::Reset),
+        )?;
+
+        // After-segment
+        let after_remaining = remaining.saturating_sub(match_printed);
+        if after_remaining > 0 {
+            let after_display = if m.formatted_text.has_ansi() {
+                let ft = crate::format::FormattedText::new(&after_raw);
+                // raw_truncated already appends \x1b[0m when truncating
+                ft.raw_truncated(after_remaining)
+            } else {
+                after_plain
+                    .chars()
+                    .take(after_remaining)
+                    .collect::<String>()
+            };
+            let after_printed = if m.formatted_text.has_ansi() {
+                crate::format::visible_char_count(&after_display)
+            } else {
+                after_display.chars().count()
+            };
+            queue!(writer, style::Print(&after_display))?;
+            printed_cols += after_printed;
+        }
+        // Reset any ANSI attributes from the original line content before padding,
+        // preventing color bleed into space-padding or subsequent content.
+        if m.formatted_text.has_ansi() {
+            queue!(writer, style::Print("\x1b[0m"))?;
+        }
+
+        Ok(printed_cols)
+    }
+
+    /// Render a simple (non-match) line, preserving any ANSI formatting.
+    ///
+    /// Returns the number of visible columns printed.
+    fn render_simple_line(
+        writer: &mut impl Write,
+        line: &Line,
+        text_width: usize,
+    ) -> Result<usize> {
+        let ft = line.formatted_text();
+        let display = if ft.has_ansi() {
+            ft.raw_truncated(text_width)
+        } else {
+            ft.plain_text().chars().take(text_width).collect::<String>()
+        };
+        let display_len = if ft.has_ansi() {
+            crate::format::visible_char_count(&display)
+        } else {
+            display.chars().count()
+        };
+        queue!(writer, style::Print(&display))?;
+        // Reset ANSI after simple line content to prevent color bleed.
+        if ft.has_ansi() {
+            queue!(writer, style::Print("\x1b[0m"))?;
+        }
+        Ok(display_len)
     }
 
     /// Render to any writer with a given terminal size.
@@ -1188,11 +1233,7 @@ impl Controller {
                 // X-mode labels continue on empty rows (but not the last row = usage line)
                 if in_xmode && row < (height as usize).saturating_sub(1) {
                     if let Some(label) = quick_select::get_label(row) {
-                        queue!(
-                            writer,
-                            cursor::MoveTo(1, row as u16),
-                            style::Print(label.to_string()),
-                        )?;
+                        queue!(writer, cursor::MoveTo(1, row as u16), style::Print(label),)?;
                     }
                 }
             }
@@ -1411,11 +1452,7 @@ impl Controller {
             // In x-mode, labels continue on border line (not usage line)
             if in_xmode {
                 if let Some(label) = quick_select::get_label(border_y as usize) {
-                    queue!(
-                        writer,
-                        cursor::MoveTo(1, border_y),
-                        style::Print(label.to_string()),
-                    )?;
+                    queue!(writer, cursor::MoveTo(1, border_y), style::Print(label),)?;
                 }
             }
 

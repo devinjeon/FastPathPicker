@@ -11,14 +11,6 @@ pub fn get_label(index: usize) -> Option<char> {
         .map(|&b| b as char)
 }
 
-/// Find the line index for a given quick-select label character.
-/// Accepts both upper and lowercase input (for non-X_MODE contexts).
-#[allow(dead_code)]
-pub fn find_index_for_label(ch: char) -> Option<usize> {
-    let upper = ch.to_ascii_uppercase();
-    QUICK_SELECT_LABELS.chars().position(|c| c == upper)
-}
-
 /// Find the line index for a given quick-select label character (exact match).
 /// Python only matches exact characters in LABELS (no case conversion).
 pub fn find_index_for_label_exact(ch: char) -> Option<usize> {
