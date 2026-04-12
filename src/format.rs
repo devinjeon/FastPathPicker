@@ -1,3 +1,55 @@
+/// Classification of a segment in ANSI-containing text.
+enum AnsiSegment {
+    /// A visible character at the given char index.
+    Visible(usize),
+    /// An ANSI escape sequence spanning chars[start..end].
+    Escape(usize, usize),
+}
+
+/// Iterate over raw_chars, yielding each segment as either a visible character
+/// or an ANSI escape sequence span. Centralizes the ANSI-skipping logic that
+/// was previously duplicated across new, breakat, raw_truncated, raw_take_front,
+/// raw_take_back, and visible_char_count.
+fn iter_ansi_segments(chars: &[char]) -> impl Iterator<Item = AnsiSegment> + '_ {
+    let mut i = 0;
+    std::iter::from_fn(move || {
+        if i >= chars.len() {
+            return None;
+        }
+        if chars[i] == '\x1b' && i + 1 < chars.len() && chars[i + 1] == '[' {
+            let start = i;
+            i += 2;
+            while i < chars.len() && !is_ansi_terminator(chars[i]) {
+                i += 1;
+            }
+            if i < chars.len() {
+                i += 1; // skip terminator
+            }
+            Some(AnsiSegment::Escape(start, i))
+        } else {
+            let idx = i;
+            i += 1;
+            Some(AnsiSegment::Visible(idx))
+        }
+    })
+}
+
+/// Find the raw char index corresponding to the given visible character position.
+/// ANSI sequences before that position are included (i.e., the returned index
+/// points to the first visible char at or beyond `visible_pos`).
+fn find_raw_offset_for_visible(chars: &[char], visible_pos: usize) -> usize {
+    let mut visible = 0;
+    for segment in iter_ansi_segments(chars) {
+        if let AnsiSegment::Visible(idx) = segment {
+            if visible >= visible_pos {
+                return idx;
+            }
+            visible += 1;
+        }
+    }
+    chars.len()
+}
+
 /// Wraps a line of text that may contain ANSI escape sequences,
 /// providing both plain-text access and raw ANSI-preserved access.
 #[derive(Debug, Clone)]
@@ -13,23 +65,11 @@ impl FormattedText {
     /// Parse a string potentially containing ANSI escape sequences.
     /// Stores both the raw text (with ANSI codes) and plain text (stripped).
     pub fn new(raw: &str) -> Self {
-        let mut plain = String::new();
         let chars: Vec<char> = raw.chars().collect();
-        let mut i = 0;
-
-        while i < chars.len() {
-            if chars[i] == '\x1b' && i + 1 < chars.len() && chars[i + 1] == '[' {
-                // Skip ANSI sequence: ESC[ ... (terminator)
-                i += 2;
-                while i < chars.len() && !is_ansi_terminator(chars[i]) {
-                    i += 1;
-                }
-                if i < chars.len() {
-                    i += 1; // skip terminator
-                }
-            } else {
-                plain.push(chars[i]);
-                i += 1;
+        let mut plain = String::new();
+        for segment in iter_ansi_segments(&chars) {
+            if let AnsiSegment::Visible(idx) = segment {
+                plain.push(chars[idx]);
             }
         }
 
@@ -55,28 +95,9 @@ impl FormattedText {
     /// Split the raw text at a visible character position, preserving ANSI codes.
     /// Like Python's FormattedText.breakat(). Returns (before, after) with ANSI intact.
     pub fn breakat(&self, visible_pos: usize) -> (String, String) {
-        let chars = &self.raw_chars;
-        let mut visible = 0;
-        let mut i = 0;
-
-        while i < chars.len() && visible < visible_pos {
-            if chars[i] == '\x1b' && i + 1 < chars.len() && chars[i + 1] == '[' {
-                // Skip ANSI sequence entirely (counts as 0 visible chars)
-                i += 2;
-                while i < chars.len() && !is_ansi_terminator(chars[i]) {
-                    i += 1;
-                }
-                if i < chars.len() {
-                    i += 1; // skip terminator
-                }
-            } else {
-                visible += 1;
-                i += 1;
-            }
-        }
-
-        let before: String = chars[..i].iter().collect();
-        let after: String = chars[i..].iter().collect();
+        let split_at = find_raw_offset_for_visible(&self.raw_chars, visible_pos);
+        let before: String = self.raw_chars[..split_at].iter().collect();
+        let after: String = self.raw_chars[split_at..].iter().collect();
         (before, after)
     }
 
@@ -96,25 +117,21 @@ impl FormattedText {
         let mut result = String::new();
         let chars = &self.raw_chars;
         let mut visible_count = 0;
-        let mut i = 0;
 
-        while i < chars.len() && visible_count < max_visible {
-            if chars[i] == '\x1b' && i + 1 < chars.len() && chars[i + 1] == '[' {
-                // Copy entire ANSI sequence
-                result.push(chars[i]);
-                i += 1;
-                while i < chars.len() {
-                    result.push(chars[i]);
-                    if is_ansi_terminator(chars[i]) {
-                        i += 1;
+        for segment in iter_ansi_segments(chars) {
+            match segment {
+                AnsiSegment::Escape(start, end) => {
+                    for &ch in &chars[start..end] {
+                        result.push(ch);
+                    }
+                }
+                AnsiSegment::Visible(idx) => {
+                    if visible_count >= max_visible {
                         break;
                     }
-                    i += 1;
+                    result.push(chars[idx]);
+                    visible_count += 1;
                 }
-            } else {
-                result.push(chars[i]);
-                visible_count += 1;
-                i += 1;
             }
         }
 
@@ -149,36 +166,40 @@ impl FormattedText {
         format!("{front}\x1b[0m{decorator}{back}\x1b[0m")
     }
 
-    /// Take the first N visible characters from raw text, preserving ANSI codes.
+    /// Take the first N visible characters from raw text, preserving ANSI codes
+    /// that appear *before or between* those characters. Does NOT append a trailing
+    /// ANSI reset — callers must add `\x1b[0m` themselves if color bleed is a concern
+    /// (e.g., `raw_truncated_with_decorator` does this explicitly).
     fn raw_take_front(&self, n: usize) -> String {
         let mut result = String::new();
         let chars = &self.raw_chars;
         let mut visible = 0;
-        let mut i = 0;
 
-        while i < chars.len() && visible < n {
-            if chars[i] == '\x1b' && i + 1 < chars.len() && chars[i + 1] == '[' {
-                result.push(chars[i]);
-                i += 1;
-                while i < chars.len() {
-                    result.push(chars[i]);
-                    if is_ansi_terminator(chars[i]) {
-                        i += 1;
+        for segment in iter_ansi_segments(chars) {
+            match segment {
+                AnsiSegment::Escape(start, end) => {
+                    for &ch in &chars[start..end] {
+                        result.push(ch);
+                    }
+                }
+                AnsiSegment::Visible(idx) => {
+                    if visible >= n {
                         break;
                     }
-                    i += 1;
+                    result.push(chars[idx]);
+                    visible += 1;
                 }
-            } else {
-                result.push(chars[i]);
-                visible += 1;
-                i += 1;
             }
         }
 
         result
     }
 
-    /// Take the last N visible characters from raw text, preserving ANSI codes.
+    /// Take the last N visible characters from raw text, preserving ALL ANSI
+    /// escape sequences — including those preceding the visible portion — so that
+    /// colors/styles set earlier in the string are still active. This is
+    /// asymmetric with `raw_take_front`, which stops collecting as soon as it
+    /// reaches the visible-character limit and therefore drops trailing ANSI codes.
     fn raw_take_back(&self, n: usize) -> String {
         let chars = &self.raw_chars;
         let total_visible = self.plain.chars().count();
@@ -189,33 +210,21 @@ impl FormattedText {
         let skip_visible = total_visible - n;
         let mut result = String::new();
         let mut visible = 0;
-        let mut i = 0;
-        let mut collecting = false;
 
-        while i < chars.len() {
-            if chars[i] == '\x1b' && i + 1 < chars.len() && chars[i + 1] == '[' {
-                let start = i;
-                i += 2;
-                while i < chars.len() && !is_ansi_terminator(chars[i]) {
-                    i += 1;
-                }
-                if i < chars.len() {
-                    i += 1;
-                }
-                if collecting {
-                    for &ch in &chars[start..i] {
+        for segment in iter_ansi_segments(chars) {
+            match segment {
+                AnsiSegment::Escape(start, end) => {
+                    // Always collect ANSI sequences so preceding colors are preserved
+                    for &ch in &chars[start..end] {
                         result.push(ch);
                     }
                 }
-            } else {
-                visible += 1;
-                if visible > skip_visible {
-                    collecting = true;
+                AnsiSegment::Visible(idx) => {
+                    visible += 1;
+                    if visible > skip_visible {
+                        result.push(chars[idx]);
+                    }
                 }
-                if collecting {
-                    result.push(chars[i]);
-                }
-                i += 1;
             }
         }
 
@@ -224,24 +233,14 @@ impl FormattedText {
 }
 
 /// Count visible (non-ANSI) characters in a string without constructing a FormattedText.
-/// Uses streaming char iteration to avoid heap allocation.
+/// Delegates to `iter_ansi_segments` so the ANSI-skipping logic is not duplicated.
+/// The one allocation is the `chars().collect()` vec required by iter_ansi_segments;
+/// this is acceptable because visible_char_count is not called on hot inner loops.
 pub fn visible_char_count(s: &str) -> usize {
-    let mut count = 0;
-    let mut chars = s.chars().peekable();
-    while let Some(ch) = chars.next() {
-        if ch == '\x1b' && chars.peek() == Some(&'[') {
-            chars.next(); // consume '['
-                          // Skip until ANSI terminator
-            for seq_ch in chars.by_ref() {
-                if is_ansi_terminator(seq_ch) {
-                    break;
-                }
-            }
-        } else {
-            count += 1;
-        }
-    }
-    count
+    let chars: Vec<char> = s.chars().collect();
+    iter_ansi_segments(&chars)
+        .filter(|seg| matches!(seg, AnsiSegment::Visible(_)))
+        .count()
 }
 
 /// Check if a character is an ANSI CSI sequence terminator.

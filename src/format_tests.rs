@@ -169,6 +169,51 @@ fn test_visible_char_count_matches_formatted_text() {
     }
 }
 
+// --- raw_take_back ANSI preservation tests ---
+
+#[test]
+fn test_raw_take_back_preserves_ansi_color() {
+    // Critical: raw_take_back must preserve ANSI codes preceding the visible portion.
+    // "\x1b[31mabcdefghij\x1b[0m" with n=5 should yield "\x1b[31mfghij\x1b[0m"
+    // (the red color code must NOT be dropped).
+    let ft = FormattedText::new("\x1b[31mabcdefghij\x1b[0m");
+    let result = ft.raw_take_back(5);
+    assert!(
+        result.contains("\x1b[31m"),
+        "Should preserve red color code, got: {:?}",
+        result
+    );
+    let plain = FormattedText::new(&result);
+    assert_eq!(plain.plain_text(), "fghij");
+}
+
+#[test]
+fn test_raw_take_back_multiple_ansi_codes() {
+    // Multiple ANSI codes: all should be preserved
+    let ft = FormattedText::new("\x1b[1m\x1b[31mabcde\x1b[0m");
+    let result = ft.raw_take_back(3);
+    assert!(result.contains("\x1b[1m"), "Should preserve bold code");
+    assert!(result.contains("\x1b[31m"), "Should preserve red code");
+    let plain = FormattedText::new(&result);
+    assert_eq!(plain.plain_text(), "cde");
+}
+
+#[test]
+fn test_raw_truncated_with_decorator_preserves_back_ansi() {
+    // Decorator mode: the back portion should have ANSI colors preserved
+    let ft = FormattedText::new("\x1b[31mabcdefghijklmnopqrstuvwxyz\x1b[0m");
+    let result = ft.raw_truncated_with_decorator(15);
+    let plain = FormattedText::new(&result);
+    assert_eq!(plain.plain_text().chars().count(), 15);
+    // The back portion should still have the red ANSI code
+    // (there should be at least 2 occurrences of \x1b[31m or the code before the back part)
+    assert!(
+        result.contains("\x1b[31m"),
+        "Back portion should preserve ANSI color, got: {:?}",
+        result
+    );
+}
+
 // --- breakat tests ---
 
 #[test]
