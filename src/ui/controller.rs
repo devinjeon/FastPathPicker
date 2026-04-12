@@ -373,10 +373,13 @@ impl Controller {
         // so custom bindings only effectively fire on Continue actions.
         if matches!(action, Action::Continue) {
             if let KeyCode::Char(ch) = key.code {
-                for binding in &self.custom_bindings {
-                    if binding.key.len() == 1 && binding.key == ch.to_string() {
-                        return self.execute_custom_binding(&binding.command.clone());
-                    }
+                if let Some(cmd) = self
+                    .custom_bindings
+                    .iter()
+                    .find(|b| b.key.len() == 1 && b.key.starts_with(ch))
+                    .map(|b| b.command.clone())
+                {
+                    return self.execute_custom_binding(&cmd);
                 }
             }
         }
@@ -510,10 +513,13 @@ impl Controller {
             _ => {
                 // Custom bindings fire in all modes including X_MODE (like Python)
                 if let KeyCode::Char(ch) = key.code {
-                    for binding in &self.custom_bindings {
-                        if binding.key.len() == 1 && binding.key == ch.to_string() {
-                            return self.execute_custom_binding(&binding.command.clone());
-                        }
+                    if let Some(cmd) = self
+                        .custom_bindings
+                        .iter()
+                        .find(|b| b.key.len() == 1 && b.key.starts_with(ch))
+                        .map(|b| b.command.clone())
+                    {
+                        return self.execute_custom_binding(&cmd);
                     }
                 }
                 Ok(Action::Continue)
@@ -522,7 +528,8 @@ impl Controller {
     }
 
     fn execute_custom_binding(&mut self, command: &str) -> Result<Action> {
-        self.command_buffer = command.to_string();
+        self.command_buffer.clear();
+        self.command_buffer.push_str(command);
         Ok(Action::Execute)
     }
 
@@ -774,6 +781,9 @@ impl Controller {
         (width, height): (u16, u16),
         dirty_line_indices: &[usize],
     ) -> Result<()> {
+        if height < 5 || width < 10 {
+            return Ok(());
+        }
         let chrome = Chrome::new(width, height);
         let scrollbar = ScrollBar::new(self.lines.len(), height as usize);
         let has_scrollbar = scrollbar.is_active();
@@ -961,10 +971,7 @@ impl Controller {
                 before_plain.chars().take(max_len).collect::<String>()
             };
             let before_printed = if m.formatted_text.has_ansi() {
-                crate::format::FormattedText::new(&before_display)
-                    .plain_text()
-                    .chars()
-                    .count()
+                crate::format::visible_char_count(&before_display)
             } else {
                 before_display.chars().count()
             };
@@ -1025,15 +1032,17 @@ impl Controller {
                         .collect::<String>()
                 };
                 let after_printed = if m.formatted_text.has_ansi() {
-                    crate::format::FormattedText::new(&after_display)
-                        .plain_text()
-                        .chars()
-                        .count()
+                    crate::format::visible_char_count(&after_display)
                 } else {
                     after_display.chars().count()
                 };
                 queue!(writer, style::Print(&after_display))?;
                 printed_cols += after_printed;
+            }
+            // Reset any ANSI attributes from the original line content before padding,
+            // preventing color bleed into space-padding or subsequent content.
+            if m.formatted_text.has_ansi() {
+                queue!(writer, style::Print("\x1b[0m"))?;
             }
         } else {
             let ft = line.formatted_text();
@@ -1043,15 +1052,16 @@ impl Controller {
                 ft.plain_text().chars().take(text_width).collect::<String>()
             };
             let display_len = if ft.has_ansi() {
-                crate::format::FormattedText::new(&display)
-                    .plain_text()
-                    .chars()
-                    .count()
+                crate::format::visible_char_count(&display)
             } else {
                 display.chars().count()
             };
             queue!(writer, style::Print(&display))?;
             printed_cols += display_len;
+            // Reset ANSI after simple line content to prevent color bleed.
+            if ft.has_ansi() {
+                queue!(writer, style::Print("\x1b[0m"))?;
+            }
         }
 
         if use_space_padding {
@@ -1086,6 +1096,18 @@ impl Controller {
     /// Render to any writer with a given terminal size.
     /// Used by both the real event loop (with stdout) and tests (with Vec<u8>).
     pub fn render_to(&self, writer: &mut impl Write, (width, height): (u16, u16)) -> Result<()> {
+        // Guard against extremely small terminals where layout calculations break down.
+        if height < 5 || width < 10 {
+            queue!(
+                writer,
+                cursor::MoveTo(0, 0),
+                terminal::Clear(ClearType::All),
+                style::Print("Terminal too small"),
+            )?;
+            writer.flush()?;
+            return Ok(());
+        }
+
         let chrome = Chrome::new(width, height);
 
         // Show cursor in command mode, hide otherwise

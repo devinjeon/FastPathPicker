@@ -223,6 +223,27 @@ impl FormattedText {
     }
 }
 
+/// Count visible (non-ANSI) characters in a string without constructing a FormattedText.
+/// Uses streaming char iteration to avoid heap allocation.
+pub fn visible_char_count(s: &str) -> usize {
+    let mut count = 0;
+    let mut chars = s.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch == '\x1b' && chars.peek() == Some(&'[') {
+            chars.next(); // consume '['
+                          // Skip until ANSI terminator
+            for seq_ch in chars.by_ref() {
+                if is_ansi_terminator(seq_ch) {
+                    break;
+                }
+            }
+        } else {
+            count += 1;
+        }
+    }
+    count
+}
+
 /// Check if a character is an ANSI CSI sequence terminator.
 /// Only recognize 'm' and 'K' to match Python PathPicker's behavior.
 /// Other CSI terminators (H, J, A, B, C, D) are left as literal text,
