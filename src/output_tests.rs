@@ -130,10 +130,10 @@ fn test_join_files_vim_split_disabled() {
 
     let result = join_files_into_command(&[("a.rs", 1), ("b.rs", 2)]);
     // With split disabled, vim falls through to the general editor path.
-    // vim is in the +linenum editor list, so it uses +N 'path' format
-    // (matching Python PathPicker behavior).
+    // "vim" is not in the special-case editor list, so paths are shell-escaped
+    // and line numbers are omitted (no FPP_LINENUM_SEP set).
     assert_eq!(
-        result, "vim  +1 'a.rs' +2 'b.rs'",
+        result, "vim  'a.rs' 'b.rs'",
         "Full vim split-disabled command mismatch"
     );
 
