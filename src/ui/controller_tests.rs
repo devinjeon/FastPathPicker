@@ -440,13 +440,27 @@ fn test_command_mode_esc_clears_buffer_and_returns_to_normal() {
 // --- QuickSelect mode G/END/A key tests ---
 
 #[test]
-fn test_xmode_g_uppercase_is_ignored() {
+fn test_xmode_g_uppercase_is_label_not_jump() {
+    // G is a quick-select label (index 4 in LABELS), not jump-to-last in xmode.
+    // With only 3 lines, G's label index (4) is out of bounds, so nothing happens.
     let (lines, indices) = make_test_lines(&["a.txt", "b.txt", "c.txt"]);
     let mut ctrl = Controller::new(lines, indices, None, false, None, false);
     ctrl.mode = Mode::QuickSelect;
     let key = KeyEvent::new(KeyCode::Char('G'), KeyModifiers::NONE);
     ctrl.handle_key(key).unwrap();
+    // hover stays at 0 because label index 4 > line count 3
     assert_eq!(ctrl.hover_index, 0);
+
+    // With enough lines, G selects the item at label index 4
+    let paths: Vec<&str> = (0..10).map(|_| "x.txt").collect();
+    let (lines2, indices2) = make_test_lines(&paths);
+    let mut ctrl2 = Controller::new(lines2, indices2, None, false, None, false);
+    ctrl2.mode = Mode::QuickSelect;
+    ctrl2.handle_key(key).unwrap();
+    assert!(
+        ctrl2.lines[4].as_match().unwrap().selected,
+        "G should select lines[4] when enough lines exist"
+    );
 }
 
 #[test]
@@ -752,7 +766,23 @@ fn test_sequence_page_down_then_home() {
 /// Python: xModeWithSelect — [x, G, J] (G ignored, J is quick-select label)
 #[test]
 fn test_sequence_xmode_interactions() {
-    let (lines, indices) = make_test_lines(&["a.txt", "b.txt", "c.txt"]);
+    // Need enough lines so that J (index 7 in QUICK_SELECT_LABELS "BCDEGHIJKLM...")
+    // maps to a real line. J is at position 7 → selects self.lines[scroll_offset + 7].
+    let paths: Vec<&str> = (0..10)
+        .map(|i| match i {
+            0 => "a.txt",
+            1 => "b.txt",
+            2 => "c.txt",
+            3 => "d.txt",
+            4 => "e.txt",
+            5 => "f.txt",
+            6 => "g.txt",
+            7 => "h.txt",
+            8 => "i.txt",
+            _ => "j.txt",
+        })
+        .collect();
+    let (lines, indices) = make_test_lines(&paths);
     let mut ctrl = Controller::new(lines, indices, None, false, None, false);
 
     // x: enter quick-select mode
@@ -760,15 +790,27 @@ fn test_sequence_xmode_interactions() {
         .unwrap();
     assert_eq!(ctrl.mode, Mode::QuickSelect);
 
-    // G: should be ignored in X_MODE (Python compat)
+    // G: in X_MODE, G is a quick-select label (index 4 in LABELS), NOT jump-to-last.
+    // This is the key Python compat behavior — G selects lines[4].
     ctrl.handle_key(KeyEvent::new(KeyCode::Char('G'), KeyModifiers::NONE))
         .unwrap();
-    assert_eq!(ctrl.hover_index, 0); // didn't jump to last
+    assert!(
+        ctrl.lines[4].as_match().unwrap().selected,
+        "G label should select lines[4] (e.txt)"
+    );
+    assert_eq!(ctrl.hover_index, 4, "hover should move to G-labeled item");
 
-    // J: is a quick-select label — selects item at that row
+    // J: is a quick-select label at index 7 — selects lines[7] ("h.txt")
     ctrl.handle_key(KeyEvent::new(KeyCode::Char('J'), KeyModifiers::NONE))
         .unwrap();
-    // J is in LABELS at some index, should toggle that row's selection
+    assert!(
+        ctrl.lines[7].as_match().unwrap().selected,
+        "J label should select lines[7] (h.txt)"
+    );
+    assert_eq!(
+        ctrl.hover_index, 7,
+        "hover should move to the quick-selected item"
+    );
 }
 
 /// Python: selectAllBug — [A] on long list
