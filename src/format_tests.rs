@@ -248,3 +248,78 @@ fn test_breakat_beyond_length() {
     assert_eq!(before, "hi");
     assert_eq!(after, "");
 }
+
+// --- breakat_raw tests ---
+
+#[test]
+fn test_breakat_raw_plain() {
+    let (before, after) = super::breakat_raw("hello world", 5);
+    assert_eq!(before, "hello");
+    assert_eq!(after, " world");
+}
+
+#[test]
+fn test_breakat_raw_with_ansi() {
+    let raw = "\x1b[31mhello\x1b[0m world";
+    let (before, after) = super::breakat_raw(raw, 5);
+    // breakat_raw should match FormattedText::breakat
+    let ft = FormattedText::new(raw);
+    let (ft_before, ft_after) = ft.breakat(5);
+    assert_eq!(before, ft_before);
+    assert_eq!(after, ft_after);
+}
+
+#[test]
+fn test_breakat_raw_at_zero() {
+    let (before, after) = super::breakat_raw("hello", 0);
+    assert_eq!(before, "");
+    assert_eq!(after, "hello");
+}
+
+#[test]
+fn test_breakat_raw_beyond_length() {
+    let (before, after) = super::breakat_raw("hi", 100);
+    assert_eq!(before, "hi");
+    assert_eq!(after, "");
+}
+
+// --- raw_truncate_str tests ---
+
+#[test]
+fn test_raw_truncate_str_no_truncation() {
+    let result = super::raw_truncate_str("hello", 10);
+    assert_eq!(result, "hello");
+    // No reset appended when not truncated
+    assert!(!result.contains("\x1b[0m"));
+}
+
+#[test]
+fn test_raw_truncate_str_truncates() {
+    let result = super::raw_truncate_str("hello world", 5);
+    let visible = super::visible_char_count(&result);
+    assert_eq!(visible, 5);
+    assert!(result.ends_with("\x1b[0m"));
+}
+
+#[test]
+fn test_raw_truncate_str_with_ansi() {
+    let raw = "\x1b[31mhello\x1b[0m world";
+    let result = super::raw_truncate_str(raw, 5);
+    // Should match FormattedText::raw_truncated
+    let ft = FormattedText::new(raw);
+    let ft_result = ft.raw_truncated(5);
+    assert_eq!(result, ft_result);
+}
+
+#[test]
+fn test_raw_truncate_str_empty() {
+    let result = super::raw_truncate_str("", 5);
+    assert_eq!(result, "");
+}
+
+#[test]
+fn test_raw_truncate_str_ansi_only() {
+    let result = super::raw_truncate_str("\x1b[31m\x1b[0m", 5);
+    // ANSI-only string has 0 visible chars, no truncation needed
+    assert_eq!(result, "\x1b[31m\x1b[0m");
+}

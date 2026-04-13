@@ -232,15 +232,76 @@ impl FormattedText {
     }
 }
 
+/// Truncate a raw ANSI-containing string to `max_visible` visible characters,
+/// preserving ANSI codes. Appends a reset sequence when truncation occurs.
+/// Like `FormattedText::raw_truncated` but operates on a plain `&str` without
+/// requiring a full `FormattedText` construction.
+pub fn raw_truncate_str(raw: &str, max_visible: usize) -> String {
+    let mut result = String::new();
+    let mut visible_count = 0;
+    let mut truncated = false;
+    let mut chars = raw.chars().peekable();
+
+    while let Some(ch) = chars.next() {
+        if ch == '\x1b' && chars.peek() == Some(&'[') {
+            result.push(ch);
+            result.push(chars.next().unwrap()); // '['
+            for ch in chars.by_ref() {
+                result.push(ch);
+                if is_ansi_terminator(ch) {
+                    break;
+                }
+            }
+        } else {
+            if visible_count >= max_visible {
+                truncated = true;
+                break;
+            }
+            result.push(ch);
+            visible_count += 1;
+        }
+    }
+
+    if truncated {
+        result.push_str("\x1b[0m");
+    }
+    result
+}
+
+/// Split a raw ANSI-containing string at a visible character position without
+/// constructing a full `FormattedText`. Used when the caller already has a raw
+/// substring and only needs to split it (e.g., splitting rest_raw at match boundary).
+pub fn breakat_raw(raw: &str, visible_pos: usize) -> (String, String) {
+    let chars: Vec<char> = raw.chars().collect();
+    let split_at = find_raw_offset_for_visible(&chars, visible_pos);
+    let before: String = chars[..split_at].iter().collect();
+    let after: String = chars[split_at..].iter().collect();
+    (before, after)
+}
+
 /// Count visible (non-ANSI) characters in a string without constructing a FormattedText.
-/// Delegates to `iter_ansi_segments` so the ANSI-skipping logic is not duplicated.
-/// The one allocation is the `chars().collect()` vec required by iter_ansi_segments;
-/// this is acceptable because visible_char_count is not called on hot inner loops.
+/// Operates directly on bytes/chars without allocating a Vec<char>, since this is called
+/// per-line during rendering.
 pub fn visible_char_count(s: &str) -> usize {
-    let chars: Vec<char> = s.chars().collect();
-    iter_ansi_segments(&chars)
-        .filter(|seg| matches!(seg, AnsiSegment::Visible(_)))
-        .count()
+    let mut count = 0;
+    let mut chars = s.chars();
+    while let Some(ch) = chars.next() {
+        if ch == '\x1b' {
+            if chars.clone().next() == Some('[') {
+                chars.next(); // skip '['
+                for ch in chars.by_ref() {
+                    if is_ansi_terminator(ch) {
+                        break;
+                    }
+                }
+            } else {
+                count += 1;
+            }
+        } else {
+            count += 1;
+        }
+    }
+    count
 }
 
 /// Check if a character is an ANSI CSI sequence terminator.
