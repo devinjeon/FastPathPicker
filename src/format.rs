@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 /// Classification of a segment in ANSI-containing text.
 enum AnsiSegment {
     /// A visible character at the given char index.
@@ -109,9 +111,9 @@ impl FormattedText {
     /// Get raw text truncated to max_visible visible characters,
     /// preserving ANSI escape sequences within that range.
     /// Returns the raw text slice with ANSI codes intact, plus a reset sequence at the end.
-    pub fn raw_truncated(&self, max_visible: usize) -> String {
+    pub fn raw_truncated(&self, max_visible: usize) -> Cow<'_, str> {
         if self.plain.chars().count() <= max_visible {
-            return self.raw.clone();
+            return Cow::Borrowed(&self.raw);
         }
 
         let mut result = String::new();
@@ -137,15 +139,15 @@ impl FormattedText {
 
         // Append reset to avoid color bleeding
         result.push_str("\x1b[0m");
-        result
+        Cow::Owned(result)
     }
 
     /// Get raw text with |...| truncation decorator applied,
     /// preserving ANSI codes in the front and back portions.
-    pub fn raw_truncated_with_decorator(&self, max_visible: usize) -> String {
+    pub fn raw_truncated_with_decorator(&self, max_visible: usize) -> Cow<'_, str> {
         let plain_len = self.plain.chars().count();
         if plain_len <= max_visible {
-            return self.raw.clone();
+            return Cow::Borrowed(&self.raw);
         }
 
         let decorator = "|...|";
@@ -163,7 +165,7 @@ impl FormattedText {
         // Get back portion with ANSI
         let back = self.raw_take_back(back_visible);
 
-        format!("{front}\x1b[0m{decorator}{back}\x1b[0m")
+        Cow::Owned(format!("{front}\x1b[0m{decorator}{back}\x1b[0m"))
     }
 
     /// Take the first N visible characters from raw text, preserving ANSI codes

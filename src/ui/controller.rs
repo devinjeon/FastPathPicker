@@ -1116,10 +1116,10 @@ impl Controller {
         text_width: usize,
     ) -> Result<usize> {
         let ft = line.formatted_text();
-        let display = if ft.has_ansi() {
+        let display: std::borrow::Cow<'_, str> = if ft.has_ansi() {
             ft.raw_truncated(text_width)
         } else {
-            ft.plain_text().chars().take(text_width).collect::<String>()
+            std::borrow::Cow::Owned(ft.plain_text().chars().take(text_width).collect::<String>())
         };
         let display_len = if ft.has_ansi() {
             crate::format::visible_char_count(&display)
