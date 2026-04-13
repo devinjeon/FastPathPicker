@@ -203,7 +203,7 @@ static REGEX_WATERFALL: LazyLock<[RegexConfig; 13]> = LazyLock::new(|| {
 // --- Repository Path Detection ---
 
 /// Detect the repository root via git or hg, falling back to "./"
-pub fn get_repo_path() -> String {
+pub(crate) fn get_repo_path() -> String {
     if let Ok(output) = Command::new("git")
         .args(["rev-parse", "--show-toplevel"])
         .output()
