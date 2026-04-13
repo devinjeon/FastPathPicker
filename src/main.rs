@@ -83,8 +83,16 @@ fn preprocess_args() -> Vec<String> {
         .collect()
 }
 
-/// Returns `Ok(true)` if a script should be executed, `Ok(false)` for silent quit (Ctrl-C).
-fn run_once(args: &Args, lines: Vec<line::Line>, match_indices: Vec<usize>) -> Result<bool> {
+/// Clear the selection state of all matched lines.
+fn reset_selections(lines: &mut [line::Line], match_indices: &[usize]) {
+    for &idx in match_indices {
+        if let Some(m) = lines[idx].as_match_mut() {
+            m.selected = false;
+        }
+    }
+}
+
+fn run_once(args: &Args, lines: &mut Vec<line::Line>, match_indices: &[usize]) -> Result<bool> {
     if match_indices.is_empty() {
         output::output_no_matches()?;
         return Ok(true);
@@ -103,18 +111,24 @@ fn run_once(args: &Args, lines: Vec<line::Line>, match_indices: Vec<usize>) -> R
         return Ok(true);
     }
 
-    // Create and run interactive controller
+    // Create and run interactive controller — swap out lines to avoid cloning
+    let owned_lines = std::mem::take(lines);
     let execute_keys_str = args.execute_keys.as_ref().map(|v| v.join(" "));
     let mut controller = ui::controller::Controller::new(
-        lines,
-        match_indices,
+        owned_lines,
+        match_indices.to_vec(),
         preset_command,
         args.all,
         execute_keys_str,
         args.all_input,
     );
 
-    controller.run()
+    let result = controller.run();
+
+    // Move lines back so the caller can reuse them in keep-open mode
+    *lines = controller.into_lines();
+
+    result
 }
 
 /// Execute the generated .fpp.sh script using the user's shell.
@@ -241,15 +255,18 @@ fn main() -> Result<()> {
     let match_indices = input::get_matches(&lines);
 
     if args.keep_open && std::env::var("FPP_SKIP_EXECUTE").is_err() {
+        let mut lines = lines;
         loop {
             let _ = state::delete_selection();
-            let should_execute = run_once(&args, lines.clone(), match_indices.clone())?;
+            let should_execute = run_once(&args, &mut lines, &match_indices)?;
             if should_execute {
                 execute_script(args.non_interactive)?;
             }
+            reset_selections(&mut lines, &match_indices);
         }
     } else {
-        let should_execute = run_once(&args, lines, match_indices)?;
+        let mut lines = lines;
+        let should_execute = run_once(&args, &mut lines, &match_indices)?;
         if should_execute {
             execute_script(args.non_interactive)?;
         }

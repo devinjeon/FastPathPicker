@@ -130,6 +130,11 @@ impl Controller {
         ctrl
     }
 
+    /// Consume the controller and return the lines for reuse in keep-open mode.
+    pub fn into_lines(self) -> Vec<Line> {
+        self.lines
+    }
+
     /// Set viewport size override (for testing).
     pub fn set_viewport_size(&mut self, width: u16, height: u16) {
         self.viewport_size = Some((width, height));
