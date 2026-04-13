@@ -1402,9 +1402,11 @@ impl Controller {
                         let truncated_header: String = header.chars().take(max_w).collect();
                         // Python: start_y = sidebar_y + 1 = (min_y + count - 1) + 1 = min_y + count
                         let desc_start = sidebar_start_y + sidebar_text.split('\n').count() as u16;
+                        // Python: addstr(start_y, border_x + 2, header) — offset by 2
+                        // to leave a gap after the '|' border character.
                         queue!(
                             writer,
-                            cursor::MoveTo(border_x + 1, desc_start),
+                            cursor::MoveTo(border_x + 2, desc_start),
                             style::Print(&truncated_header),
                         )?;
                         for (i, line) in desc.iter().enumerate() {
@@ -1416,7 +1418,7 @@ impl Controller {
                                 line.chars().take(max_w.saturating_sub(6)).collect();
                             queue!(
                                 writer,
-                                cursor::MoveTo(border_x + 1, row),
+                                cursor::MoveTo(border_x + 2, row),
                                 style::Print(format!("    * {truncated}")),
                             )?;
                         }
