@@ -227,8 +227,8 @@ fn main() -> Result<()> {
             // This is standard practice for TUI programs that read piped stdin.
             let ret = unsafe { libc::dup2(tty_fd, libc::STDIN_FILENO) };
             if ret == -1 {
-                eprintln!(
-                    "warning: dup2 failed (errno {}), interactive UI may not work",
+                anyhow::bail!(
+                    "dup2 failed to redirect stdin to /dev/tty: {}",
                     std::io::Error::last_os_error()
                 );
             }
