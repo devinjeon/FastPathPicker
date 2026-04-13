@@ -1354,7 +1354,18 @@ impl Controller {
 
     fn render_info(&self, writer: &mut impl Write, chrome: &Chrome, height: u16) -> Result<()> {
         if chrome.is_wide {
-            let border_x = chrome.content_width;
+            // Python: in COMMAND_MODE, border_x is recalculated as
+            // len(SHORT_COMMAND_PROMPT) + 20, rather than the default max_x - 50.
+            // This shifts the sidebar right to give the command input more room.
+            // The .min() clamp is a defensive guard not present in Python — it prevents
+            // border_x from exceeding screen width. In practice this never triggers
+            // because wide mode requires 200+ columns and the value is ~78.
+            let border_x = if self.mode == Mode::Command {
+                (super::chrome::SHORT_COMMAND_PROMPT.len() as u16 + 20)
+                    .min(chrome.content_width + chrome.sidebar_width)
+            } else {
+                chrome.content_width
+            };
 
             // Clear sidebar area and draw vertical border '|' (matching Python's HelperChrome).
             // Clearing from border_x prevents stale content when sidebar text shrinks
@@ -1379,7 +1390,9 @@ impl Controller {
 
             // Python: HelperChrome.get_min_y() = CHROME_MIN_Y = 0
             let sidebar_start_y = 0u16;
-            let max_w = chrome.sidebar_width as usize - 2;
+            // Sidebar text width: total screen width minus border_x, minus 2 for border + padding
+            let total_width = chrome.content_width + chrome.sidebar_width;
+            let max_w = (total_width.saturating_sub(border_x).saturating_sub(2)) as usize;
             for (i, line) in sidebar_text.split('\n').enumerate() {
                 let row = sidebar_start_y + i as u16;
                 if row < height {
