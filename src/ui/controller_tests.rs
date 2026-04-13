@@ -1011,14 +1011,20 @@ fn test_warning_mode_render_uses_full_screen_clear() {
 
 #[test]
 fn test_begin_height_matches_python() {
-    // Python: int(round(max_y / 2) - len(paths) / 2.0)
-    let cases = [(24, 3), (50, 10), (10, 2), (80, 1)];
-    for (max_y, num_paths) in cases {
-        let rust_result = ((max_y as f64 / 2.0).round() - (num_paths as f64 / 2.0)) as i32;
-        let python_result = ((max_y as f64 / 2.0).round() - (num_paths as f64 / 2.0)) as i32;
+    // Expected values pre-computed from Python:
+    //   int(round(max_y / 2) - len(paths) / 2.0)
+    let cases: [(i32, usize, i32); 5] = [
+        (24, 3, 10),  // int(round(12.0) - 1.5) = int(10.5) = 10
+        (50, 10, 20), // int(round(25.0) - 5.0) = int(20.0) = 20
+        (10, 2, 4),   // int(round(5.0) - 1.0) = int(4.0) = 4
+        (80, 1, 39),  // int(round(40.0) - 0.5) = int(39.5) = 39
+        (7, 7, 0),    // int(round(3.5) - 3.5) = int(0.5) = 0
+    ];
+    for (max_y, num_paths, expected) in cases {
+        let result = compute_begin_height(max_y, num_paths);
         assert_eq!(
-            rust_result, python_result,
-            "begin_height mismatch for max_y={max_y}, paths={num_paths}"
+            result, expected,
+            "begin_height mismatch for max_y={max_y}, paths={num_paths}: got {result}, expected {expected}"
         );
     }
 }

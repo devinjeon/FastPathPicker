@@ -1291,10 +1291,7 @@ impl Controller {
             .map(|m| m.path.clone())
             .collect();
         let max_y = height as i32;
-
-        // Python: begin_height = int(round(max_y / 2) - len(paths) / 2.0)
-        // Use float subtraction before converting to int (matching Python exactly)
-        let mut begin_height = ((max_y as f64 / 2.0).round() - (paths.len() as f64 / 2.0)) as i32;
+        let mut begin_height = compute_begin_height(max_y, paths.len());
         if begin_height <= 1 {
             begin_height = max_y - 6;
         }
@@ -1514,6 +1511,13 @@ pub enum Action {
 }
 
 const TRUNCATE_DECORATOR: &str = "|...|";
+
+/// Compute `begin_height` for command mode layout.
+/// Python: `int(round(max_y / 2) - len(paths) / 2.0)`
+/// Uses float subtraction before converting to int to match Python exactly.
+fn compute_begin_height(max_y: i32, num_paths: usize) -> i32 {
+    ((max_y as f64 / 2.0).round() - (num_paths as f64 / 2.0)) as i32
+}
 
 /// Parse a key sequence string into KeyEvents (for --execute-keys flag).
 fn execute_keys_from_str(keys: &str) -> Vec<KeyEvent> {
