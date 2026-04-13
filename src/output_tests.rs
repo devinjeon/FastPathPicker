@@ -336,3 +336,70 @@ fn test_join_files_zero_linenum() {
     assert!(!result.contains("+0"), "Should not have +0: {result}");
     env::remove_var("FPP_EDITOR");
 }
+
+#[test]
+fn test_join_files_subl_linenum_format() {
+    let _guard = ENV_LOCK.lock().unwrap();
+    env::set_var("FPP_EDITOR", "subl");
+    env::remove_var("FPP_LINENUM_SEP");
+    let result = join_files_into_command(&[("src/main.rs", 42), ("lib.rs", 7)]);
+    assert!(
+        result.contains("'src/main.rs:42'"),
+        "subl should use filename:linenum format: {result}"
+    );
+    assert!(result.contains("'lib.rs:7'"), "subl second file: {result}");
+    env::remove_var("FPP_EDITOR");
+}
+
+#[test]
+fn test_join_files_sublime_linenum_format() {
+    let _guard = ENV_LOCK.lock().unwrap();
+    env::set_var("FPP_EDITOR", "sublime");
+    env::remove_var("FPP_LINENUM_SEP");
+    let result = join_files_into_command(&[("a.rs", 10)]);
+    assert!(
+        result.contains("'a.rs:10'"),
+        "sublime should use filename:linenum format: {result}"
+    );
+    env::remove_var("FPP_EDITOR");
+}
+
+#[test]
+fn test_join_files_vi_linenum_format() {
+    let _guard = ENV_LOCK.lock().unwrap();
+    env::set_var("FPP_EDITOR", "vi");
+    env::remove_var("FPP_DISABLE_SPLIT");
+    let result = join_files_into_command(&[("src/main.rs", 5), ("lib.rs", 12)]);
+    assert!(
+        result.contains("+5 'src/main.rs'"),
+        "vi should use +linenum filename format: {result}"
+    );
+    assert!(result.contains("+12 'lib.rs'"), "vi second file: {result}");
+    env::remove_var("FPP_EDITOR");
+}
+
+#[test]
+fn test_join_files_joe_linenum_format() {
+    let _guard = ENV_LOCK.lock().unwrap();
+    env::set_var("FPP_EDITOR", "joe");
+    env::remove_var("FPP_LINENUM_SEP");
+    let result = join_files_into_command(&[("a.rs", 3)]);
+    assert!(
+        result.contains("+3 'a.rs'"),
+        "joe should use +linenum filename format: {result}"
+    );
+    env::remove_var("FPP_EDITOR");
+}
+
+#[test]
+fn test_join_files_mvim_split_mode() {
+    let _guard = ENV_LOCK.lock().unwrap();
+    env::set_var("FPP_EDITOR", "mvim");
+    env::remove_var("FPP_DISABLE_SPLIT");
+    let result = join_files_into_command(&[("a.rs", 1), ("b.rs", 2), ("c.rs", 3)]);
+    assert_eq!(
+        result, "mvim  +1 a.rs +\"vsp +2 b.rs\" +\"vsp +3 c.rs\"",
+        "mvim split command mismatch"
+    );
+    env::remove_var("FPP_EDITOR");
+}
