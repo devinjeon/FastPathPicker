@@ -55,16 +55,6 @@ pub fn output() -> Result<()> {
     Ok(())
 }
 
-/// Clear the log file.
-#[allow(dead_code)]
-pub fn clear() -> Result<()> {
-    let log_path = state::get_state_dir().join(".fpp.log");
-    if log_path.exists() {
-        std::fs::write(log_path, "")?;
-    }
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
