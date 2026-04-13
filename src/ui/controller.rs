@@ -678,16 +678,15 @@ impl Controller {
     fn toggle_select_all(&mut self) {
         // Two-pass approach to work around the borrow checker:
         // First pass (immutable): collect indices of the first occurrence of each unique path.
-        // We compare by string value (not pointer address) to correctly deduplicate paths
-        // that have the same content but different String allocations.
-        let mut seen_paths: std::collections::HashSet<String> = std::collections::HashSet::new();
+        // Uses a set of line indices (usize) instead of cloning path strings.
+        let mut seen_paths: std::collections::HashSet<&str> = std::collections::HashSet::new();
         let toggle_indices: Vec<usize> = self
             .match_indices
             .iter()
             .filter(|&&idx| {
                 self.lines[idx]
                     .as_match()
-                    .is_some_and(|m| seen_paths.insert(m.path.clone()))
+                    .is_some_and(|m| seen_paths.insert(&m.path))
             })
             .copied()
             .collect();
@@ -997,11 +996,10 @@ impl Controller {
         let me = m.match_end.min(plain_len);
 
         let (before_raw, rest_raw) = m.formatted_text.breakat(ms);
-        let (_matched_raw, after_raw) = {
-            let rest_ft = crate::format::FormattedText::new(&rest_raw);
-            let match_len = me - ms;
-            rest_ft.breakat(match_len)
-        };
+        // Split rest_raw at the match boundary without re-parsing into FormattedText.
+        // breakat_raw operates directly on the raw string, avoiding a redundant ANSI parse.
+        let match_len = me - ms;
+        let (_matched_raw, after_raw) = crate::format::breakat_raw(&rest_raw, match_len);
 
         let before_plain: String = plain.chars().take(ms).collect();
         let matched_plain: String = plain.chars().skip(ms).take(me - ms).collect();
@@ -1023,10 +1021,9 @@ impl Controller {
 
         let mut printed_cols: usize = 0;
 
-        // Before-segment
+        // Before-segment — use raw_truncate_str directly to avoid re-parsing ANSI
         let before_display = if m.formatted_text.has_ansi() {
-            let ft = crate::format::FormattedText::new(&before_raw);
-            ft.raw_truncated(max_len)
+            crate::format::raw_truncate_str(&before_raw, max_len)
         } else {
             before_plain.chars().take(max_len).collect::<String>()
         };
@@ -1085,9 +1082,8 @@ impl Controller {
         let after_remaining = remaining.saturating_sub(match_printed);
         if after_remaining > 0 {
             let after_display = if m.formatted_text.has_ansi() {
-                let ft = crate::format::FormattedText::new(&after_raw);
-                // raw_truncated already appends \x1b[0m when truncating
-                ft.raw_truncated(after_remaining)
+                // raw_truncate_str already appends \x1b[0m when truncating
+                crate::format::raw_truncate_str(&after_raw, after_remaining)
             } else {
                 after_plain
                     .chars()
@@ -1412,11 +1408,15 @@ impl Controller {
                             style::Print(&truncated_header),
                         )?;
                         for (i, line) in desc.iter().enumerate() {
+                            let row = desc_start + 2 + i as u16;
+                            if row >= height {
+                                break;
+                            }
                             let truncated: String =
                                 line.chars().take(max_w.saturating_sub(6)).collect();
                             queue!(
                                 writer,
-                                cursor::MoveTo(border_x + 1, desc_start + 2 + i as u16),
+                                cursor::MoveTo(border_x + 1, row),
                                 style::Print(format!("    * {truncated}")),
                             )?;
                         }
