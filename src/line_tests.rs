@@ -169,3 +169,35 @@ fn test_get_path() {
     let m = make_line_match("src/main.rs");
     assert_eq!(m.get_path(), "src/main.rs");
 }
+
+#[cfg(unix)]
+#[test]
+fn test_get_username_current_user() {
+    // SAFETY: getuid() is always safe to call and returns the real user ID.
+    let uid = unsafe { libc::getuid() };
+    let name = get_username(uid);
+    assert!(
+        name.is_some(),
+        "get_username should return Some for the current user (uid={uid})"
+    );
+    assert!(
+        !name.as_ref().unwrap().is_empty(),
+        "username should be non-empty"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn test_get_groupname_current_group() {
+    // SAFETY: getgid() is always safe to call and returns the real group ID.
+    let gid = unsafe { libc::getgid() };
+    let name = get_groupname(gid);
+    assert!(
+        name.is_some(),
+        "get_groupname should return Some for the current group (gid={gid})"
+    );
+    assert!(
+        !name.as_ref().unwrap().is_empty(),
+        "group name should be non-empty"
+    );
+}
