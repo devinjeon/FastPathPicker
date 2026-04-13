@@ -86,11 +86,20 @@ fn join_files_into_command(files_and_nums: &[(&str, u64)]) -> String {
             }
         }
     } else {
+        // Fallback path: FPP_DISABLE_SPLIT is set, or editor is not vim/nvim/mvim.
+        // NOTE: Python's original code only matches "vim" | "vi" | "nvim" for the
+        // +linenum format in this fallback, omitting "mvim". This is a deliberate
+        // deviation: mvim supports the same +linenum syntax as vim, so we include it
+        // here for consistency. Python's omission appears to be an oversight since mvim
+        // IS handled in the split-mode branch above.
         let editor_base = editor.split_whitespace().next().unwrap_or(&editor);
         for (path, num) in files_and_nums {
             let escaped = shell_escape(path);
             match editor_base {
-                "vi" | "nvim" | "nano" | "joe" | "emacs" | "emacsclient" | "micro" if *num != 0 => {
+                "vim" | "mvim" | "vi" | "nvim" | "nano" | "joe" | "emacs" | "emacsclient"
+                | "micro"
+                    if *num != 0 =>
+                {
                     cmd.push_str(&format!(" +{num} {escaped}"));
                 }
                 "subl" | "sublime" | "atom" | "hx" if *num != 0 => {
