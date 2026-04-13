@@ -200,38 +200,62 @@ impl fmt::Display for Line {
 }
 
 /// Format SystemTime as local time in Python's mm/dd/YYYY HH:MM:SS format.
+/// Uses `localtime_r` to convert Unix timestamps to local calendar components,
+/// avoiding error-prone manual calendar arithmetic.
 fn format_system_time_local(time: SystemTime) -> String {
     let duration = time
         .duration_since(SystemTime::UNIX_EPOCH)
         .unwrap_or_default();
-    // Use 0 as fallback for timestamps beyond i64::MAX (year 2262+) to safely
-    // produce "01/01/1970" rather than entering the year-calculation loop with
-    // an astronomically large value.
     let total_secs = i64::try_from(duration.as_secs()).unwrap_or(0);
 
-    // Get local timezone offset (approximate: use libc on Unix)
-    let local_secs = total_secs + get_utc_offset(total_secs);
+    let (year, month, day, hours, mins, secs) = get_local_time_components(total_secs);
 
-    // Guard against negative local_secs (dates before epoch after timezone offset).
-    // Fall back to epoch display rather than looping forever with negative days.
-    if local_secs < 0 {
-        return "01/01/1970 00:00:00".to_string();
+    // Python format: %m/%d/%Y %H:%M:%S
+    format!("{month:02}/{day:02}/{year} {hours:02}:{mins:02}:{secs:02}")
+}
+
+/// Convert a Unix timestamp to local time components (year, month, day, hour, min, sec).
+#[cfg(unix)]
+fn get_local_time_components(unix_time: i64) -> (i32, u32, u32, u32, u32, u32) {
+    use std::mem::MaybeUninit;
+    unsafe {
+        let mut tm = MaybeUninit::zeroed();
+        let result = libc::localtime_r(&unix_time, tm.as_mut_ptr());
+        if result.is_null() {
+            // localtime_r failed; fall back to epoch display.
+            return (1970, 1, 1, 0, 0, 0);
+        }
+        // SAFETY: localtime_r returned non-NULL, so the tm struct is fully initialized.
+        let tm = tm.assume_init();
+        (
+            tm.tm_year + 1900,      // tm_year is years since 1900
+            (tm.tm_mon + 1) as u32, // tm_mon is 0-based
+            tm.tm_mday as u32,
+            tm.tm_hour as u32,
+            tm.tm_min as u32,
+            tm.tm_sec as u32,
+        )
     }
+}
 
-    let days_since_epoch = local_secs / 86400;
-    let time_of_day = local_secs.rem_euclid(86400);
-    let hours = time_of_day / 3600;
-    let mins = (time_of_day % 3600) / 60;
-    let secs = time_of_day % 60;
-
-    let mut year = 1970i64;
-    let mut remaining_days = days_since_epoch;
+#[cfg(not(unix))]
+fn get_local_time_components(unix_time: i64) -> (i32, u32, u32, u32, u32, u32) {
+    // Non-Unix: fall back to UTC calculation.
+    if unix_time < 0 {
+        return (1970, 1, 1, 0, 0, 0);
+    }
+    let time_of_day = unix_time.rem_euclid(86400);
+    let hours = (time_of_day / 3600) as u32;
+    let mins = ((time_of_day % 3600) / 60) as u32;
+    let secs = (time_of_day % 60) as u32;
+    let mut days = unix_time / 86400;
+    let mut year = 1970i32;
     loop {
-        let days_in_year = if is_leap_year(year) { 366 } else { 365 };
-        if remaining_days < days_in_year {
+        let dy = if is_leap_year(year) { 366 } else { 365 };
+        if days < dy {
             break;
         }
-        remaining_days -= days_in_year;
+        days -= dy;
         year += 1;
     }
     let month_days = if is_leap_year(year) {
@@ -241,40 +265,17 @@ fn format_system_time_local(time: SystemTime) -> String {
     };
     let mut month = 1u32;
     for &md in &month_days {
-        if remaining_days < md {
+        if days < md {
             break;
         }
-        remaining_days -= md;
+        days -= md;
         month += 1;
     }
-    let day = remaining_days + 1;
-
-    // Python format: %m/%d/%Y %H:%M:%S
-    format!("{month:02}/{day:02}/{year} {hours:02}:{mins:02}:{secs:02}")
+    (year, month, (days + 1) as u32, hours, mins, secs)
 }
 
-/// Get UTC offset in seconds for a given Unix timestamp.
-#[cfg(unix)]
-fn get_utc_offset(unix_time: i64) -> i64 {
-    use std::mem::MaybeUninit;
-    unsafe {
-        let mut tm = MaybeUninit::zeroed();
-        let result = libc::localtime_r(&unix_time, tm.as_mut_ptr());
-        if result.is_null() {
-            // localtime_r failed (e.g., invalid timestamp); fall back to UTC.
-            return 0;
-        }
-        // SAFETY: localtime_r returned non-NULL, so the tm struct is fully initialized.
-        tm.assume_init().tm_gmtoff
-    }
-}
-
-#[cfg(not(unix))]
-fn get_utc_offset(_unix_time: i64) -> i64 {
-    0
-}
-
-fn is_leap_year(year: i64) -> bool {
+#[cfg(any(not(unix), test))]
+fn is_leap_year(year: i32) -> bool {
     (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0)
 }
 

@@ -1,5 +1,5 @@
 use std::io::IsTerminal;
-use std::os::unix::io::AsRawFd;
+use std::os::unix::io::IntoRawFd;
 use std::process;
 
 use anyhow::Result;
@@ -219,15 +219,21 @@ fn main() -> Result<()> {
     // Only needed (and possible) when we'll run an interactive session.
     if !args.non_interactive {
         if let Ok(tty) = std::fs::File::open("/dev/tty") {
+            // Consume the File to prevent its Drop from closing the fd, since
+            // dup2 will duplicate it onto STDIN_FILENO. The original tty fd is
+            // intentionally leaked (no longer needed after dup2).
+            let tty_fd = tty.into_raw_fd();
             // SAFETY: dup2 atomically replaces fd 0 with the tty fd.
             // This is standard practice for TUI programs that read piped stdin.
-            let ret = unsafe { libc::dup2(tty.as_raw_fd(), libc::STDIN_FILENO) };
+            let ret = unsafe { libc::dup2(tty_fd, libc::STDIN_FILENO) };
             if ret == -1 {
                 eprintln!(
                     "warning: dup2 failed (errno {}), interactive UI may not work",
                     std::io::Error::last_os_error()
                 );
             }
+            // Close the original tty fd; STDIN_FILENO now holds the duplicate.
+            unsafe { libc::close(tty_fd) };
         }
     }
 
