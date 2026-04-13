@@ -53,3 +53,33 @@ fn test_render_track() {
     assert_eq!(render_scrollbar_row(2, &range), " . ");
     assert_eq!(render_scrollbar_row(7, &range), " . ");
 }
+
+#[test]
+fn test_calculate_at_middle() {
+    let sb = ScrollBar::new(100, 20);
+    let middle_offset = 40;
+    let range = sb.calculate(middle_offset).unwrap();
+    assert!(
+        range.box_start > 1,
+        "box_start should be past top cap at middle scroll"
+    );
+    assert!(
+        range.box_end < 18,
+        "box_end should be before bottom cap at middle scroll"
+    );
+}
+
+#[test]
+fn test_calculate_at_max_offset() {
+    let sb = ScrollBar::new(100, 20);
+    let max_offset = 100 - 20; // total_lines - screen_height
+    let range = sb.calculate(max_offset).unwrap();
+    assert_eq!(
+        range.box_end, 18,
+        "box_end should be at the very bottom (top_y) at max offset"
+    );
+    assert!(
+        range.box_start > 1,
+        "box_start should be past top cap at max offset"
+    );
+}

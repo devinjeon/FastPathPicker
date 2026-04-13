@@ -681,6 +681,35 @@ fn test_validate_file_exists_no_prepend() {
     std::env::set_current_dir(original_dir).unwrap();
 }
 
+// ── validate_file_exists negative cases ──────────────────────────
+
+#[test]
+fn test_validate_nonexistent_path_with_spaces() {
+    let result = match_line("this path does not exist.txt", true, false);
+    assert!(
+        result.is_none(),
+        "Non-existent path with spaces should not match when validate_file_exists=true"
+    );
+}
+
+#[test]
+fn test_validate_nonexistent_absolute_path() {
+    let result = match_line("/tmp/absolutely_nonexistent_fpp_test_file.rs", true, false);
+    assert!(
+        result.is_none(),
+        "Non-existent absolute path should not match when validate_file_exists=true"
+    );
+}
+
+#[test]
+fn test_validate_nonexistent_relative_path() {
+    let result = match_line("nonexistent_dir/fake_file.txt", true, false);
+    assert!(
+        result.is_none(),
+        "Non-existent relative path should not match when validate_file_exists=true"
+    );
+}
+
 // ── prepend_dir additional cases ─────────────────────────────────
 
 #[test]
