@@ -303,7 +303,7 @@ const LOOKUP_BUF_MAX: usize = 1 << 20; // 1 MB
 #[cfg(unix)]
 fn get_username(uid: u32) -> Option<String> {
     let mut buf = vec![0u8; 1024];
-    let mut pwd: libc::passwd = unsafe { std::mem::zeroed() };
+    let mut pwd = std::mem::MaybeUninit::<libc::passwd>::uninit();
     let mut result: *mut libc::passwd = std::ptr::null_mut();
 
     loop {
@@ -312,7 +312,7 @@ fn get_username(uid: u32) -> Option<String> {
         let ret = unsafe {
             libc::getpwuid_r(
                 uid,
-                &mut pwd,
+                pwd.as_mut_ptr(),
                 buf.as_mut_ptr() as *mut libc::c_char,
                 buf.len(),
                 &mut result,
@@ -332,7 +332,8 @@ fn get_username(uid: u32) -> Option<String> {
     if result.is_null() {
         return None;
     }
-    // SAFETY: result is non-null and points to pwd which is backed by buf.
+    // SAFETY: result is non-null, so getpwuid_r has initialized pwd.
+    let pwd = unsafe { pwd.assume_init() };
     let name = unsafe { std::ffi::CStr::from_ptr(pwd.pw_name) };
     Some(name.to_string_lossy().into_owned())
 }
@@ -341,7 +342,7 @@ fn get_username(uid: u32) -> Option<String> {
 #[cfg(unix)]
 fn get_groupname(gid: u32) -> Option<String> {
     let mut buf = vec![0u8; 1024];
-    let mut grp: libc::group = unsafe { std::mem::zeroed() };
+    let mut grp = std::mem::MaybeUninit::<libc::group>::uninit();
     let mut result: *mut libc::group = std::ptr::null_mut();
 
     loop {
@@ -350,7 +351,7 @@ fn get_groupname(gid: u32) -> Option<String> {
         let ret = unsafe {
             libc::getgrgid_r(
                 gid,
-                &mut grp,
+                grp.as_mut_ptr(),
                 buf.as_mut_ptr() as *mut libc::c_char,
                 buf.len(),
                 &mut result,
@@ -370,7 +371,8 @@ fn get_groupname(gid: u32) -> Option<String> {
     if result.is_null() {
         return None;
     }
-    // SAFETY: result is non-null and points to grp which is backed by buf.
+    // SAFETY: result is non-null, so getgrgid_r has initialized grp.
+    let grp = unsafe { grp.assume_init() };
     let name = unsafe { std::ffi::CStr::from_ptr(grp.gr_name) };
     Some(name.to_string_lossy().into_owned())
 }
