@@ -759,6 +759,9 @@ fn test_tons_of_files() {
 fn test_file_name_with_spaces_description() {
     // This test needs validate_file_exists=true, so we must chdir to
     // the tests/ directory where fixture files exist in inputs/.
+    // Integration tests run in a separate binary from unit tests, so they cannot
+    // share the DIR_LOCK in src/lib.rs::test_env. This local lock protects against
+    // parallel tests within this integration test binary that call set_current_dir.
     use std::sync::Mutex;
     static DIR_LOCK: Mutex<()> = Mutex::new(());
     let _guard = DIR_LOCK.lock().unwrap();

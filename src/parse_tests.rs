@@ -429,9 +429,9 @@ fn test_resolvable() {
 
 // ── validate_file_exists tests ───────────────────────────────────
 
-// Shared mutex to prevent parallel test interference with set_current_dir.
-use std::sync::Mutex;
-static DIR_LOCK: Mutex<()> = Mutex::new(());
+// Use the shared DIR_LOCK from test_env to prevent parallel test interference
+// with set_current_dir across all unit test modules in this binary.
+use crate::test_env::DIR_LOCK;
 
 struct FileExistsTestCase {
     input: &'static str,

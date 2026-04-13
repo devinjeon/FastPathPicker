@@ -21,4 +21,10 @@ pub(crate) mod test_env {
     /// All env-mutating tests across all modules MUST acquire this lock to prevent
     /// cross-module races when tests run in parallel.
     pub static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    /// Global lock for all tests that call `std::env::set_current_dir`.
+    /// Since cwd is process-global, all unit tests that change it must share
+    /// this single lock. Integration tests (tests/) run in a separate binary,
+    /// so they cannot share this lock — they define their own.
+    pub static DIR_LOCK: Mutex<()> = Mutex::new(());
 }
