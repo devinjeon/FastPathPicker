@@ -52,9 +52,9 @@ All CLI arguments, keyboard shortcuts, environment variables, and regex patterns
 | CLI arguments | 10/10 | `-c`, `-e`, `-nfc`, `-ai`, `-ni`, `-a`, `--clean`, `-r`, `-ko`, `--debug` |
 | Regex patterns | 13/13 | Identical waterfall from `HOMEDIR_REGEX` through `ENTIRE_TRIMMED_LINE` |
 | Keyboard shortcuts | 13/13 | Navigation, selection, mode switching all matched |
-| Editor integration | 8/8 editors | vim, nvim, mvim, subl, atom, hx, nano, emacs (+ line number support) |
+| Editor integration | 13/13 editors | vim, nvim, mvim, vi, subl, sublime, atom, hx, nano, joe, emacs, emacsclient, micro |
 | UI modes | 4/4 | Normal, Command, QuickSelect, Warning |
-| Environment variables | 7/7 | `FPP_EDITOR`, `VISUAL`, `EDITOR`, `FPP_DIR`, `FPP_DISABLE_SPLIT`, `FPP_LINENUM_SEP`, `FPP_REPOS` |
+| Environment variables | 9/9 | `FPP_EDITOR`, `VISUAL`, `EDITOR`, `FPP_DIR`, `FPP_DISABLE_SPLIT`, `FPP_LINENUM_SEP`, `FPP_REPOS`, `SHELL`, `VIMRUNTIME` |
 | Screen tests | 34/34 | All original Python screen tests ported and passing |
 | E2E snapshots | 538 cases | Verified identical output against the original Python implementation |
 
@@ -145,9 +145,11 @@ cargo install --path .
 | `A` | Toggle select all (unique files) |
 | `x` | Quick-select mode (labels each line) |
 | `c` | Enter command mode |
-| `d` | Toggle file description sidebar |
+| `d` | Show file description (until next cursor move) |
 | `Enter` | Open selected files in editor |
 | `q` | Quit without action |
+| `Esc` | Exit command mode or quick-select mode |
+| `Ctrl-C` | Quit immediately (no script execution) |
 
 Custom key bindings: `~/.cache/fpp/.fpp.keys` (INI format, `[bindings]` section).
 
@@ -162,6 +164,8 @@ Custom key bindings: `~/.cache/fpp/.fpp.keys` (INI format, `[bindings]` section)
 | `FPP_DISABLE_SPLIT` | Disable vim vertical split panes |
 | `FPP_LINENUM_SEP` | Custom line number separator for unsupported editors |
 | `FPP_REPOS` | Additional repo root directories (comma-separated) |
+| `SHELL` | Shell used for command execution |
+| `VIMRUNTIME` | Detected to avoid `-i` flag when running inside vim |
 
 ### Editor Integration
 
@@ -172,7 +176,7 @@ fpp2 detects your editor and formats arguments with line numbers accordingly:
 | vim, nvim, mvim | Vertical splits with `+linenum` | `vim +10 file1 +"vsp +20 file2"` |
 | vim -p | Tab pages | `vim -p +10 file1 +20 file2` |
 | subl, atom, hx | `file:linenum` | `subl file1:10 file2:20` |
-| nano, joe, emacs, micro, vi | `+linenum file` | `nano +10 file1 +20 file2` |
+| nano, joe, emacs, emacsclient, micro, vi | `+linenum file` | `nano +10 file1 +20 file2` |
 
 Paths with spaces are automatically quoted. `FPP_DISABLE_SPLIT` opens each file in a separate vim buffer instead of splits.
 
