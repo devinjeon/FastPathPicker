@@ -32,11 +32,7 @@ impl Chrome {
     /// Get the x-offset where content starts (after scrollbar/x-mode area).
     /// Python's CHROME_MIN_X = 5 for both scrollbar and x-mode.
     pub fn content_start_x(&self, has_scrollbar: bool, x_mode: bool) -> u16 {
-        if has_scrollbar || x_mode {
-            5
-        } else {
-            0
-        }
+        if has_scrollbar || x_mode { 5 } else { 0 }
     }
 
     /// Get the usable content width for text display.
@@ -47,14 +43,12 @@ impl Chrome {
 }
 
 /// Usage strings shown in the UI (matching Python's screen_control.py).
-pub const USAGE_HEADER: &str =
-    "[f|A] selection, [down|j|up|k|space|b] navigation, [enter] open, [x] quick select mode, [c] command mode";
+pub const USAGE_HEADER: &str = "[f|A] selection, [down|j|up|k|space|b] navigation, [enter] open, [x] quick select mode, [c] command mode";
 pub const USAGE_HEADER_ALL_INPUT: &str =
     "[f|A] selection, [down|j|up|k|space|b] navigation, [x] quick select mode, [c] command mode";
 pub const USAGE_COMMAND: &str =
     "command examples: | git add | git checkout HEAD~1 -- | mv $F ../here/ |";
-pub const USAGE_XMODE: &str =
-    "[f|A] selection, [down|j|up|k|space|b] navigation, [enter] open, [x] quick select mode, [c] command mode";
+pub const USAGE_XMODE: &str = "[f|A] selection, [down|j|up|k|space|b] navigation, [enter] open, [x] quick select mode, [c] command mode";
 
 /// Sidebar usage text (matching Python's usage_strings.py USAGE_PAGE).
 pub const USAGE_PAGE: &str = "

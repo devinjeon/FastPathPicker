@@ -38,10 +38,11 @@ fn test_ignore_non_existing_configuration_file() {
     let keys_file = tmp.join(".fpp.keys");
     let _ = std::fs::remove_file(&keys_file);
 
-    std::env::set_var("FPP_DIR", &tmp);
+    // SAFETY: test runs serially under ENV_LOCK
+    unsafe { std::env::set_var("FPP_DIR", &tmp) };
     let bindings = read_key_bindings();
     // Clean up
-    std::env::remove_var("FPP_DIR");
+    unsafe { std::env::remove_var("FPP_DIR") };
     let _ = std::fs::remove_dir_all(&tmp);
 
     assert!(

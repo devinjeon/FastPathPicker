@@ -231,24 +231,24 @@ fn main() -> Result<()> {
     // After reading piped stdin, redirect fd 0 to /dev/tty so crossterm
     // can read keyboard input for the interactive UI.
     // Only needed (and possible) when we'll run an interactive session.
-    if !args.non_interactive {
-        if let Ok(tty) = std::fs::File::open("/dev/tty") {
-            // Consume the File to prevent its Drop from closing the fd, since
-            // dup2 will duplicate it onto STDIN_FILENO. The original tty fd is
-            // intentionally leaked (no longer needed after dup2).
-            let tty_fd = tty.into_raw_fd();
-            // SAFETY: dup2 atomically replaces fd 0 with the tty fd.
-            // This is standard practice for TUI programs that read piped stdin.
-            let ret = unsafe { libc::dup2(tty_fd, libc::STDIN_FILENO) };
-            if ret == -1 {
-                anyhow::bail!(
-                    "dup2 failed to redirect stdin to /dev/tty: {}",
-                    std::io::Error::last_os_error()
-                );
-            }
-            // Close the original tty fd; STDIN_FILENO now holds the duplicate.
-            unsafe { libc::close(tty_fd) };
+    if !args.non_interactive
+        && let Ok(tty) = std::fs::File::open("/dev/tty")
+    {
+        // Consume the File to prevent its Drop from closing the fd, since
+        // dup2 will duplicate it onto STDIN_FILENO. The original tty fd is
+        // intentionally leaked (no longer needed after dup2).
+        let tty_fd = tty.into_raw_fd();
+        // SAFETY: dup2 atomically replaces fd 0 with the tty fd.
+        // This is standard practice for TUI programs that read piped stdin.
+        let ret = unsafe { libc::dup2(tty_fd, libc::STDIN_FILENO) };
+        if ret == -1 {
+            anyhow::bail!(
+                "dup2 failed to redirect stdin to /dev/tty: {}",
+                std::io::Error::last_os_error()
+            );
         }
+        // Close the original tty fd; STDIN_FILENO now holds the duplicate.
+        unsafe { libc::close(tty_fd) };
     }
 
     let lines = input::get_line_objs_from_lines(&raw_lines, validate_files, all_input);

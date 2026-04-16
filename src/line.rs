@@ -101,7 +101,7 @@ impl LineMatch {
                 return vec![
                     format!("File: {}", self.path),
                     "Unable to read metadata".to_string(),
-                ]
+                ];
             }
         };
 

@@ -207,21 +207,20 @@ pub(crate) fn get_repo_path() -> String {
     if let Ok(output) = Command::new("git")
         .args(["rev-parse", "--show-toplevel"])
         .output()
+        && output.status.success()
     {
-        if output.status.success() {
-            let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            if !path.is_empty() {
-                return path;
-            }
+        let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if !path.is_empty() {
+            return path;
         }
     }
 
-    if let Ok(output) = Command::new("hg").arg("root").output() {
-        if output.status.success() {
-            let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            if !path.is_empty() {
-                return path;
-            }
+    if let Ok(output) = Command::new("hg").arg("root").output()
+        && output.status.success()
+    {
+        let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if !path.is_empty() {
+            return path;
         }
     }
 
@@ -282,18 +281,18 @@ fn match_line_impl(
             continue;
         };
 
-        if let Some(preferred) = config.preferred_regex {
-            if let Some(preferred_captures) = preferred.captures(line) {
-                let main_start = captures.get(0).map_or(0, |m| m.start());
-                let pref_start = preferred_captures.get(0).map_or(0, |m| m.start());
-                if pref_start < main_start {
-                    results.push(unpack_match(
-                        &preferred_captures,
-                        config.num_index,
-                        config.no_num,
-                    ));
-                    continue;
-                }
+        if let Some(preferred) = config.preferred_regex
+            && let Some(preferred_captures) = preferred.captures(line)
+        {
+            let main_start = captures.get(0).map_or(0, |m| m.start());
+            let pref_start = preferred_captures.get(0).map_or(0, |m| m.start());
+            if pref_start < main_start {
+                results.push(unpack_match(
+                    &preferred_captures,
+                    config.num_index,
+                    config.no_num,
+                ));
+                continue;
             }
         }
 

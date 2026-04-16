@@ -90,7 +90,8 @@ mod tests {
     fn test_add_event_and_output() {
         let _guard = crate::test_env::ENV_LOCK.lock().unwrap();
         let tmp = tempfile::tempdir().unwrap();
-        std::env::set_var("FPP_DIR", tmp.path().to_str().unwrap());
+        // SAFETY: test runs serially under ENV_LOCK
+        unsafe { std::env::set_var("FPP_DIR", tmp.path().to_str().unwrap()) };
 
         // Clear any previous events from other tests
         if let Ok(mut events) = EVENTS.lock() {
@@ -119,6 +120,6 @@ mod tests {
         if let Ok(mut events) = EVENTS.lock() {
             events.clear();
         }
-        std::env::remove_var("FPP_DIR");
+        unsafe { std::env::remove_var("FPP_DIR") };
     }
 }

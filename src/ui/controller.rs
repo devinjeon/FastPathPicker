@@ -376,17 +376,15 @@ impl Controller {
         // Python: custom bindings fire AFTER built-in keys unconditionally.
         // In Python, Quit/Execute exit the process before the loop runs,
         // so custom bindings only effectively fire on Continue actions.
-        if matches!(action, Action::Continue) {
-            if let KeyCode::Char(ch) = key.code {
-                if let Some(cmd) = self
-                    .custom_bindings
-                    .iter()
-                    .find(|b| b.key.len() == 1 && b.key.starts_with(ch))
-                    .map(|b| b.command.clone())
-                {
-                    return self.execute_custom_binding(&cmd);
-                }
-            }
+        if matches!(action, Action::Continue)
+            && let KeyCode::Char(ch) = key.code
+            && let Some(cmd) = self
+                .custom_bindings
+                .iter()
+                .find(|b| b.key.len() == 1 && b.key.starts_with(ch))
+                .map(|b| b.command.clone())
+        {
+            return self.execute_custom_binding(&cmd);
         }
 
         Ok(action)
@@ -502,14 +500,14 @@ impl Controller {
             KeyCode::Char(ch) if quick_select::QUICK_SELECT_LABELS.contains(ch) => {
                 if let Some(row_idx) = quick_select::find_index_for_label_exact(ch) {
                     let line_idx = self.scroll_offset + row_idx;
-                    if line_idx < self.lines.len() {
-                        if let Some(m) = self.lines[line_idx].as_match_mut() {
-                            m.toggle_select();
-                            if let Some(match_idx) =
-                                self.match_indices.iter().position(|&i| i == line_idx)
-                            {
-                                self.hover_index = match_idx;
-                            }
+                    if line_idx < self.lines.len()
+                        && let Some(m) = self.lines[line_idx].as_match_mut()
+                    {
+                        m.toggle_select();
+                        if let Some(match_idx) =
+                            self.match_indices.iter().position(|&i| i == line_idx)
+                        {
+                            self.hover_index = match_idx;
                         }
                     }
                 }
@@ -517,15 +515,14 @@ impl Controller {
             }
             _ => {
                 // Custom bindings fire in all modes including X_MODE (like Python)
-                if let KeyCode::Char(ch) = key.code {
-                    if let Some(cmd) = self
+                if let KeyCode::Char(ch) = key.code
+                    && let Some(cmd) = self
                         .custom_bindings
                         .iter()
                         .find(|b| b.key.len() == 1 && b.key.starts_with(ch))
                         .map(|b| b.command.clone())
-                    {
-                        return self.execute_custom_binding(&cmd);
-                    }
+                {
+                    return self.execute_custom_binding(&cmd);
                 }
                 Ok(Action::Continue)
             }
@@ -673,10 +670,10 @@ impl Controller {
     // --- Selection ---
 
     fn toggle_current_selection(&mut self) {
-        if let Some(&line_idx) = self.match_indices.get(self.hover_index) {
-            if let Some(m) = self.lines[line_idx].as_match_mut() {
-                m.toggle_select();
-            }
+        if let Some(&line_idx) = self.match_indices.get(self.hover_index)
+            && let Some(m) = self.lines[line_idx].as_match_mut()
+        {
+            m.toggle_select();
         }
     }
 
@@ -714,10 +711,10 @@ impl Controller {
 
         if selected.is_empty() {
             // Use the hovered item
-            if let Some(&idx) = self.match_indices.get(self.hover_index) {
-                if let Some(m) = self.lines[idx].as_match() {
-                    return vec![m.clone()];
-                }
+            if let Some(&idx) = self.match_indices.get(self.hover_index)
+                && let Some(m) = self.lines[idx].as_match()
+            {
+                return vec![m.clone()];
             }
             Vec::new()
         } else {
@@ -763,10 +760,10 @@ impl Controller {
     fn load_previous_selection(&mut self) {
         if let Ok(sel) = state::load_selection() {
             for idx in sel.selected_indices {
-                if idx < self.lines.len() {
-                    if let Some(m) = self.lines[idx].as_match_mut() {
-                        m.set_select(true);
-                    }
+                if idx < self.lines.len()
+                    && let Some(m) = self.lines[idx].as_match_mut()
+                {
+                    m.set_select(true);
                 }
             }
         }
@@ -836,16 +833,17 @@ impl Controller {
                     terminal::Clear(ClearType::UntilNewLine)
                 )?;
                 if has_scrollbar {
-                    if let Some(ref range) = sb_range {
+                    if let Some(range) = &sb_range {
                         let sb_str = scrollbar::render_scrollbar_row(row, range);
                         queue!(writer, style::Print(sb_str))?;
                     }
                     queue!(writer, cursor::MoveTo(4, row as u16), style::Print(" "))?;
                 }
-                if in_xmode && row < (height as usize).saturating_sub(1) {
-                    if let Some(label) = quick_select::get_label(row) {
-                        queue!(writer, cursor::MoveTo(1, row as u16), style::Print(label),)?;
-                    }
+                if in_xmode
+                    && row < (height as usize).saturating_sub(1)
+                    && let Some(label) = quick_select::get_label(row)
+                {
+                    queue!(writer, cursor::MoveTo(1, row as u16), style::Print(label),)?;
                 }
             }
         }
@@ -894,7 +892,7 @@ impl Controller {
         // Scrollbar
         let screen_row = row;
         if has_scrollbar {
-            if let Some(ref range) = sb_range {
+            if let Some(range) = sb_range {
                 let sb_str = scrollbar::render_scrollbar_row(screen_row, range);
                 queue!(writer, style::Print(sb_str))?;
             }
@@ -1225,17 +1223,18 @@ impl Controller {
                     terminal::Clear(ClearType::UntilNewLine)
                 )?;
                 if has_scrollbar {
-                    if let Some(ref range) = sb_range {
+                    if let Some(range) = &sb_range {
                         let sb_str = scrollbar::render_scrollbar_row(row, range);
                         queue!(writer, style::Print(sb_str))?;
                     }
                     queue!(writer, cursor::MoveTo(4, row as u16), style::Print(" "),)?;
                 }
                 // X-mode labels continue on empty rows (but not the last row = usage line)
-                if in_xmode && row < (height as usize).saturating_sub(1) {
-                    if let Some(label) = quick_select::get_label(row) {
-                        queue!(writer, cursor::MoveTo(1, row as u16), style::Print(label),)?;
-                    }
+                if in_xmode
+                    && row < (height as usize).saturating_sub(1)
+                    && let Some(label) = quick_select::get_label(row)
+                {
+                    queue!(writer, cursor::MoveTo(1, row as u16), style::Print(label),)?;
                 }
             }
         }
@@ -1409,35 +1408,33 @@ impl Controller {
             }
 
             // Show file description when toggled with 'd'
-            if self.show_description {
-                if let Some(&idx) = self.match_indices.get(self.hover_index) {
-                    if let Some(m) = self.lines[idx].as_match() {
-                        let desc = m.get_file_description();
-                        let header = format!("Description for {}:", m.path);
-                        let truncated_header: String = header.chars().take(max_w).collect();
-                        // Python: start_y = sidebar_y + 1 = (min_y + count - 1) + 1 = min_y + count
-                        let desc_start = sidebar_start_y + sidebar_text.split('\n').count() as u16;
-                        // Python: addstr(start_y, border_x + 2, header) — offset by 2
-                        // to leave a gap after the '|' border character.
-                        queue!(
-                            writer,
-                            cursor::MoveTo(border_x + 2, desc_start),
-                            style::Print(&truncated_header),
-                        )?;
-                        for (i, line) in desc.iter().enumerate() {
-                            let row = desc_start + 2 + i as u16;
-                            if row >= height {
-                                break;
-                            }
-                            let truncated: String =
-                                line.chars().take(max_w.saturating_sub(6)).collect();
-                            queue!(
-                                writer,
-                                cursor::MoveTo(border_x + 2, row),
-                                style::Print(format!("    * {truncated}")),
-                            )?;
-                        }
+            if self.show_description
+                && let Some(&idx) = self.match_indices.get(self.hover_index)
+                && let Some(m) = self.lines[idx].as_match()
+            {
+                let desc = m.get_file_description();
+                let header = format!("Description for {}:", m.path);
+                let truncated_header: String = header.chars().take(max_w).collect();
+                // Python: start_y = sidebar_y + 1 = (min_y + count - 1) + 1 = min_y + count
+                let desc_start = sidebar_start_y + sidebar_text.split('\n').count() as u16;
+                // Python: addstr(start_y, border_x + 2, header) — offset by 2
+                // to leave a gap after the '|' border character.
+                queue!(
+                    writer,
+                    cursor::MoveTo(border_x + 2, desc_start),
+                    style::Print(&truncated_header),
+                )?;
+                for (i, line) in desc.iter().enumerate() {
+                    let row = desc_start + 2 + i as u16;
+                    if row >= height {
+                        break;
                     }
+                    let truncated: String = line.chars().take(max_w.saturating_sub(6)).collect();
+                    queue!(
+                        writer,
+                        cursor::MoveTo(border_x + 2, row),
+                        style::Print(format!("    * {truncated}")),
+                    )?;
                 }
             }
         } else {
@@ -1467,10 +1464,8 @@ impl Controller {
             )?;
 
             // In x-mode, labels continue on border line (not usage line)
-            if in_xmode {
-                if let Some(label) = quick_select::get_label(border_y as usize) {
-                    queue!(writer, cursor::MoveTo(1, border_y), style::Print(label),)?;
-                }
+            if in_xmode && let Some(label) = quick_select::get_label(border_y as usize) {
+                queue!(writer, cursor::MoveTo(1, border_y), style::Print(label),)?;
             }
 
             let border_width = (chrome.content_width as usize).saturating_sub(min_x as usize);

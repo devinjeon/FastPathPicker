@@ -94,8 +94,9 @@ fn test_shell_escape_single_quote() {
 #[test]
 fn test_join_files_vim_split_mode() {
     let _guard = ENV_LOCK.lock().unwrap();
-    env::set_var("FPP_EDITOR", "vim");
-    env::remove_var("FPP_DISABLE_SPLIT");
+    // SAFETY: test runs serially under ENV_LOCK
+    unsafe { env::set_var("FPP_EDITOR", "vim") };
+    unsafe { env::remove_var("FPP_DISABLE_SPLIT") };
 
     let result = join_files_into_command(&[("src/main.rs", 10), ("src/lib.rs", 20)]);
     assert_eq!(
@@ -103,14 +104,15 @@ fn test_join_files_vim_split_mode() {
         "Full vim split command mismatch"
     );
 
-    env::remove_var("FPP_EDITOR");
+    unsafe { env::remove_var("FPP_EDITOR") };
 }
 
 #[test]
 fn test_join_files_nvim_split_mode() {
     let _guard = ENV_LOCK.lock().unwrap();
-    env::set_var("FPP_EDITOR", "nvim");
-    env::remove_var("FPP_DISABLE_SPLIT");
+    // SAFETY: test runs serially under ENV_LOCK
+    unsafe { env::set_var("FPP_EDITOR", "nvim") };
+    unsafe { env::remove_var("FPP_DISABLE_SPLIT") };
 
     let result = join_files_into_command(&[("a.rs", 1), ("b.rs", 2), ("c.rs", 3)]);
     assert_eq!(
@@ -118,15 +120,16 @@ fn test_join_files_nvim_split_mode() {
         "Full nvim split command mismatch"
     );
 
-    env::remove_var("FPP_EDITOR");
+    unsafe { env::remove_var("FPP_EDITOR") };
 }
 
 #[test]
 fn test_join_files_vim_split_disabled() {
     let _guard = ENV_LOCK.lock().unwrap();
-    env::set_var("FPP_EDITOR", "vim");
-    env::set_var("FPP_DISABLE_SPLIT", "1");
-    env::remove_var("FPP_LINENUM_SEP");
+    // SAFETY: test runs serially under ENV_LOCK
+    unsafe { env::set_var("FPP_EDITOR", "vim") };
+    unsafe { env::set_var("FPP_DISABLE_SPLIT", "1") };
+    unsafe { env::remove_var("FPP_LINENUM_SEP") };
 
     let result = join_files_into_command(&[("a.rs", 1), ("b.rs", 2)]);
     // With split disabled, vim falls through to the general editor path.
@@ -137,15 +140,16 @@ fn test_join_files_vim_split_disabled() {
         "Full vim split-disabled command mismatch"
     );
 
-    env::remove_var("FPP_EDITOR");
-    env::remove_var("FPP_DISABLE_SPLIT");
+    unsafe { env::remove_var("FPP_EDITOR") };
+    unsafe { env::remove_var("FPP_DISABLE_SPLIT") };
 }
 
 #[test]
 fn test_join_files_vim_p_mode() {
     let _guard = ENV_LOCK.lock().unwrap();
-    env::set_var("FPP_EDITOR", "vim -p");
-    env::remove_var("FPP_DISABLE_SPLIT");
+    // SAFETY: test runs serially under ENV_LOCK
+    unsafe { env::set_var("FPP_EDITOR", "vim -p") };
+    unsafe { env::remove_var("FPP_DISABLE_SPLIT") };
 
     let result = join_files_into_command(&[("a.rs", 1), ("b.rs", 2)]);
     assert_eq!(
@@ -153,7 +157,7 @@ fn test_join_files_vim_p_mode() {
         "Full vim -p command mismatch"
     );
 
-    env::remove_var("FPP_EDITOR");
+    unsafe { env::remove_var("FPP_EDITOR") };
 }
 
 // --- append_exit shell branch tests ---
@@ -162,8 +166,9 @@ fn test_join_files_vim_p_mode() {
 fn test_append_exit_csh() {
     let _guard = ENV_LOCK.lock().unwrap();
     let tmp = tempfile::tempdir().unwrap();
-    env::set_var("FPP_DIR", tmp.path().to_str().unwrap());
-    env::set_var("SHELL", "/bin/tcsh");
+    // SAFETY: test runs serially under ENV_LOCK
+    unsafe { env::set_var("FPP_DIR", tmp.path().to_str().unwrap()) };
+    unsafe { env::set_var("SHELL", "/bin/tcsh") };
     state::write_script("").unwrap();
 
     append_exit().unwrap();
@@ -173,16 +178,17 @@ fn test_append_exit_csh() {
         "csh should use $status: {script}"
     );
 
-    env::remove_var("FPP_DIR");
-    env::remove_var("SHELL");
+    unsafe { env::remove_var("FPP_DIR") };
+    unsafe { env::remove_var("SHELL") };
 }
 
 #[test]
 fn test_append_exit_fish() {
     let _guard = ENV_LOCK.lock().unwrap();
     let tmp = tempfile::tempdir().unwrap();
-    env::set_var("FPP_DIR", tmp.path().to_str().unwrap());
-    env::set_var("SHELL", "/usr/bin/fish");
+    // SAFETY: test runs serially under ENV_LOCK
+    unsafe { env::set_var("FPP_DIR", tmp.path().to_str().unwrap()) };
+    unsafe { env::set_var("SHELL", "/usr/bin/fish") };
     state::write_script("").unwrap();
 
     append_exit().unwrap();
@@ -192,16 +198,17 @@ fn test_append_exit_fish() {
         "fish should use $status: {script}"
     );
 
-    env::remove_var("FPP_DIR");
-    env::remove_var("SHELL");
+    unsafe { env::remove_var("FPP_DIR") };
+    unsafe { env::remove_var("SHELL") };
 }
 
 #[test]
 fn test_append_exit_rc() {
     let _guard = ENV_LOCK.lock().unwrap();
     let tmp = tempfile::tempdir().unwrap();
-    env::set_var("FPP_DIR", tmp.path().to_str().unwrap());
-    env::set_var("SHELL", "/usr/bin/rc");
+    // SAFETY: test runs serially under ENV_LOCK
+    unsafe { env::set_var("FPP_DIR", tmp.path().to_str().unwrap()) };
+    unsafe { env::set_var("SHELL", "/usr/bin/rc") };
     state::write_script("").unwrap();
 
     append_exit().unwrap();
@@ -211,32 +218,34 @@ fn test_append_exit_rc() {
         "rc should use $status: {script}"
     );
 
-    env::remove_var("FPP_DIR");
-    env::remove_var("SHELL");
+    unsafe { env::remove_var("FPP_DIR") };
+    unsafe { env::remove_var("SHELL") };
 }
 
 #[test]
 fn test_append_exit_bash() {
     let _guard = ENV_LOCK.lock().unwrap();
     let tmp = tempfile::tempdir().unwrap();
-    env::set_var("FPP_DIR", tmp.path().to_str().unwrap());
-    env::set_var("SHELL", "/bin/bash");
+    // SAFETY: test runs serially under ENV_LOCK
+    unsafe { env::set_var("FPP_DIR", tmp.path().to_str().unwrap()) };
+    unsafe { env::set_var("SHELL", "/bin/bash") };
     state::write_script("").unwrap();
 
     append_exit().unwrap();
     let script = std::fs::read_to_string(tmp.path().join(".fpp.sh")).unwrap();
     assert!(script.contains("$?"), "bash should use $?: {script}");
 
-    env::remove_var("FPP_DIR");
-    env::remove_var("SHELL");
+    unsafe { env::remove_var("FPP_DIR") };
+    unsafe { env::remove_var("SHELL") };
 }
 
 #[test]
 fn test_append_exit_no_shell() {
     let _guard = ENV_LOCK.lock().unwrap();
     let tmp = tempfile::tempdir().unwrap();
-    env::set_var("FPP_DIR", tmp.path().to_str().unwrap());
-    env::remove_var("SHELL");
+    // SAFETY: test runs serially under ENV_LOCK
+    unsafe { env::set_var("FPP_DIR", tmp.path().to_str().unwrap()) };
+    unsafe { env::remove_var("SHELL") };
     state::write_script("").unwrap();
 
     append_exit().unwrap();
@@ -247,7 +256,7 @@ fn test_append_exit_no_shell() {
         "No SHELL should not write exit: {script}"
     );
 
-    env::remove_var("FPP_DIR");
+    unsafe { env::remove_var("FPP_DIR") };
 }
 
 // --- compose_cd_command with ~/ home directory path ---
@@ -284,122 +293,132 @@ use crate::test_env::ENV_LOCK;
 fn test_output_nothing() {
     let _guard = ENV_LOCK.lock().unwrap();
     let tmp = tempfile::tempdir().unwrap();
-    env::set_var("FPP_DIR", tmp.path().to_str().unwrap());
+    // SAFETY: test runs serially under ENV_LOCK
+    unsafe { env::set_var("FPP_DIR", tmp.path().to_str().unwrap()) };
 
     output_nothing().unwrap();
     let script = std::fs::read_to_string(tmp.path().join(".fpp.sh")).unwrap();
     assert!(script.contains("nothing to do!"));
 
-    env::remove_var("FPP_DIR");
+    unsafe { env::remove_var("FPP_DIR") };
 }
 
 #[test]
 fn test_output_no_matches() {
     let _guard = ENV_LOCK.lock().unwrap();
     let tmp = tempfile::tempdir().unwrap();
-    env::set_var("FPP_DIR", tmp.path().to_str().unwrap());
-    env::set_var("SHELL", "/bin/bash");
+    // SAFETY: test runs serially under ENV_LOCK
+    unsafe { env::set_var("FPP_DIR", tmp.path().to_str().unwrap()) };
+    unsafe { env::set_var("SHELL", "/bin/bash") };
 
     output_no_matches().unwrap();
     let script = std::fs::read_to_string(tmp.path().join(".fpp.sh")).unwrap();
     assert!(script.contains("No lines matched!"));
 
-    env::remove_var("FPP_DIR");
-    env::remove_var("SHELL");
+    unsafe { env::remove_var("FPP_DIR") };
+    unsafe { env::remove_var("SHELL") };
 }
 
 #[test]
 fn test_join_files_editor_with_linenum_sep() {
     let _guard = ENV_LOCK.lock().unwrap();
-    env::set_var("FPP_EDITOR", "code");
-    env::set_var("FPP_LINENUM_SEP", ":");
+    // SAFETY: test runs serially under ENV_LOCK
+    unsafe { env::set_var("FPP_EDITOR", "code") };
+    unsafe { env::set_var("FPP_LINENUM_SEP", ":") };
     let result = join_files_into_command(&[("src/main.rs", 42)]);
     assert!(result.contains("'src/main.rs:42'"), "Got: {result}");
-    env::remove_var("FPP_EDITOR");
-    env::remove_var("FPP_LINENUM_SEP");
+    unsafe { env::remove_var("FPP_EDITOR") };
+    unsafe { env::remove_var("FPP_LINENUM_SEP") };
 }
 
 #[test]
 fn test_join_files_editor_base_name_extraction() {
     let _guard = ENV_LOCK.lock().unwrap();
-    env::set_var("FPP_EDITOR", "emacs -nw");
+    // SAFETY: test runs serially under ENV_LOCK
+    unsafe { env::set_var("FPP_EDITOR", "emacs -nw") };
     let result = join_files_into_command(&[("src/main.rs", 10)]);
     assert!(result.contains("+10"), "Got: {result}");
-    env::remove_var("FPP_EDITOR");
+    unsafe { env::remove_var("FPP_EDITOR") };
 }
 
 #[test]
 fn test_join_files_zero_linenum() {
     let _guard = ENV_LOCK.lock().unwrap();
-    env::set_var("FPP_EDITOR", "nano");
+    // SAFETY: test runs serially under ENV_LOCK
+    unsafe { env::set_var("FPP_EDITOR", "nano") };
     let result = join_files_into_command(&[("src/main.rs", 0)]);
     assert!(!result.contains("+0"), "Should not have +0: {result}");
-    env::remove_var("FPP_EDITOR");
+    unsafe { env::remove_var("FPP_EDITOR") };
 }
 
 #[test]
 fn test_join_files_subl_linenum_format() {
     let _guard = ENV_LOCK.lock().unwrap();
-    env::set_var("FPP_EDITOR", "subl");
-    env::remove_var("FPP_LINENUM_SEP");
+    // SAFETY: test runs serially under ENV_LOCK
+    unsafe { env::set_var("FPP_EDITOR", "subl") };
+    unsafe { env::remove_var("FPP_LINENUM_SEP") };
     let result = join_files_into_command(&[("src/main.rs", 42), ("lib.rs", 7)]);
     assert!(
         result.contains("'src/main.rs:42'"),
         "subl should use filename:linenum format: {result}"
     );
     assert!(result.contains("'lib.rs:7'"), "subl second file: {result}");
-    env::remove_var("FPP_EDITOR");
+    unsafe { env::remove_var("FPP_EDITOR") };
 }
 
 #[test]
 fn test_join_files_sublime_linenum_format() {
     let _guard = ENV_LOCK.lock().unwrap();
-    env::set_var("FPP_EDITOR", "sublime");
-    env::remove_var("FPP_LINENUM_SEP");
+    // SAFETY: test runs serially under ENV_LOCK
+    unsafe { env::set_var("FPP_EDITOR", "sublime") };
+    unsafe { env::remove_var("FPP_LINENUM_SEP") };
     let result = join_files_into_command(&[("a.rs", 10)]);
     assert!(
         result.contains("'a.rs:10'"),
         "sublime should use filename:linenum format: {result}"
     );
-    env::remove_var("FPP_EDITOR");
+    unsafe { env::remove_var("FPP_EDITOR") };
 }
 
 #[test]
 fn test_join_files_vi_linenum_format() {
     let _guard = ENV_LOCK.lock().unwrap();
-    env::set_var("FPP_EDITOR", "vi");
-    env::remove_var("FPP_DISABLE_SPLIT");
+    // SAFETY: test runs serially under ENV_LOCK
+    unsafe { env::set_var("FPP_EDITOR", "vi") };
+    unsafe { env::remove_var("FPP_DISABLE_SPLIT") };
     let result = join_files_into_command(&[("src/main.rs", 5), ("lib.rs", 12)]);
     assert!(
         result.contains("+5 'src/main.rs'"),
         "vi should use +linenum filename format: {result}"
     );
     assert!(result.contains("+12 'lib.rs'"), "vi second file: {result}");
-    env::remove_var("FPP_EDITOR");
+    unsafe { env::remove_var("FPP_EDITOR") };
 }
 
 #[test]
 fn test_join_files_joe_linenum_format() {
     let _guard = ENV_LOCK.lock().unwrap();
-    env::set_var("FPP_EDITOR", "joe");
-    env::remove_var("FPP_LINENUM_SEP");
+    // SAFETY: test runs serially under ENV_LOCK
+    unsafe { env::set_var("FPP_EDITOR", "joe") };
+    unsafe { env::remove_var("FPP_LINENUM_SEP") };
     let result = join_files_into_command(&[("a.rs", 3)]);
     assert!(
         result.contains("+3 'a.rs'"),
         "joe should use +linenum filename format: {result}"
     );
-    env::remove_var("FPP_EDITOR");
+    unsafe { env::remove_var("FPP_EDITOR") };
 }
 
 #[test]
 fn test_join_files_mvim_split_mode() {
     let _guard = ENV_LOCK.lock().unwrap();
-    env::set_var("FPP_EDITOR", "mvim");
-    env::remove_var("FPP_DISABLE_SPLIT");
+    // SAFETY: test runs serially under ENV_LOCK
+    unsafe { env::set_var("FPP_EDITOR", "mvim") };
+    unsafe { env::remove_var("FPP_DISABLE_SPLIT") };
     let result = join_files_into_command(&[("a.rs", 1), ("b.rs", 2), ("c.rs", 3)]);
     assert_eq!(
         result, "mvim  +1 a.rs +\"vsp +2 b.rs\" +\"vsp +3 c.rs\"",
         "mvim split command mismatch"
     );
-    env::remove_var("FPP_EDITOR");
+    unsafe { env::remove_var("FPP_EDITOR") };
 }
