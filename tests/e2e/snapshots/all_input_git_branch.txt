@@ -1,9 +1,6 @@
-
-
 if type shopt > /dev/null; then
   shopt -s expand_aliases
 fi
-
 echo "executing command:"
 echo "echo 'fix3' 'gh-pages' '* master' 'testAllInput' 'trunk'"
 echo 'fix3' 'gh-pages' '* master' 'testAllInput' 'trunk'

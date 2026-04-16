@@ -1,10 +1,7 @@
-
-
 if type shopt > /dev/null; then
   shopt -s expand_aliases
 fi
-
 echo "executing command:"
-echo "echo '/Users/devin/workspace/fast-path-picker/src/a.py' '/Users/devin/workspace/fast-path-picker/src/c.py' '/Users/devin/workspace/fast-path-picker/src/e.py'"
-echo '/Users/devin/workspace/fast-path-picker/src/a.py' '/Users/devin/workspace/fast-path-picker/src/c.py' '/Users/devin/workspace/fast-path-picker/src/e.py'
+echo "echo '{{PROJECT_ROOT}}/src/a.py' '{{PROJECT_ROOT}}/src/c.py' '{{PROJECT_ROOT}}/src/e.py'"
+echo '{{PROJECT_ROOT}}/src/a.py' '{{PROJECT_ROOT}}/src/c.py' '{{PROJECT_ROOT}}/src/e.py'
 exit $?;

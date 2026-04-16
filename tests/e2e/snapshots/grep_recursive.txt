@@ -1,9 +1,6 @@
-
-
 if type shopt > /dev/null; then
   shopt -s expand_aliases
 fi
-
 echo "executing command:"
 echo "echo './src/main.rs' './src/parse.rs' './tests/parse_test.rs'"
 echo './src/main.rs' './src/parse.rs' './tests/parse_test.rs'

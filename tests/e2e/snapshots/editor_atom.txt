@@ -1,3 +1,2 @@
-
-atom  '/Users/devin/workspace/fast-path-picker/src/main.rs:42'
+atom  '{{PROJECT_ROOT}}/src/main.rs:42'
 exit $?;

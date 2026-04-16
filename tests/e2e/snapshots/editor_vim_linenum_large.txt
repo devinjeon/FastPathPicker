@@ -1,3 +1,2 @@
-
-vim  +999999 /Users/devin/workspace/fast-path-picker/src/main.rs
+vim  +999999 {{PROJECT_ROOT}}/src/main.rs
 exit $?;

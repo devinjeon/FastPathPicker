@@ -1,10 +1,7 @@
-
-
 if type shopt > /dev/null; then
   shopt -s expand_aliases
 fi
-
 echo "executing command:"
-echo "echo '/Users/devin/workspace/fast-path-picker/src/lib.rs' '/Users/devin/workspace/fast-path-picker/src/bar.rs'"
-echo '/Users/devin/workspace/fast-path-picker/src/lib.rs' '/Users/devin/workspace/fast-path-picker/src/bar.rs'
+echo "echo '{{PROJECT_ROOT}}/src/lib.rs' '{{PROJECT_ROOT}}/src/bar.rs'"
+echo '{{PROJECT_ROOT}}/src/lib.rs' '{{PROJECT_ROOT}}/src/bar.rs'
 exit $?;

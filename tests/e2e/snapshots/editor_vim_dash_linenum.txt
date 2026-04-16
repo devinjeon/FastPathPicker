@@ -1,3 +1,2 @@
-
-vim  +22 /Users/devin/workspace/fast-path-picker/flib/asd/ent/berkeley/two.py
+vim  +22 {{PROJECT_ROOT}}/flib/asd/ent/berkeley/two.py
 exit $?;

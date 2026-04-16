@@ -1,3 +1,2 @@
-
-joe  +42 '/Users/devin/workspace/fast-path-picker/src/main.rs'
+joe  +42 '{{PROJECT_ROOT}}/src/main.rs'
 exit $?;

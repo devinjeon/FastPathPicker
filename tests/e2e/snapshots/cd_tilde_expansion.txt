@@ -1,10 +1,7 @@
-
-
 if type shopt > /dev/null; then
   shopt -s expand_aliases
 fi
-
 echo "executing command:"
-echo "echo \"/Users/devin/projects/foo\" > ~/.dircopy"
-echo "/Users/devin/projects/foo" > ~/.dircopy
+echo "echo \"{{HOME}}/projects/foo\" > ~/.dircopy"
+echo "{{HOME}}/projects/foo" > ~/.dircopy
 exit $?;

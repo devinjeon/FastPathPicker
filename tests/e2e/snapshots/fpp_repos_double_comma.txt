@@ -1,10 +1,7 @@
-
-
 if type shopt > /dev/null; then
   shopt -s expand_aliases
 fi
-
 echo "executing command:"
-echo "echo '/Users/devin/repo2/src/main.py'"
-echo '/Users/devin/repo2/src/main.py'
+echo "echo '{{HOME}}/repo2/src/main.py'"
+echo '{{HOME}}/repo2/src/main.py'
 exit $?;

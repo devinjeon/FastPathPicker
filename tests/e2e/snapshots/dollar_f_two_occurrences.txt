@@ -1,10 +1,7 @@
-
-
 if type shopt > /dev/null; then
   shopt -s expand_aliases
 fi
-
 echo "executing command:"
-echo "diff '/Users/devin/workspace/fast-path-picker/src/main.rs' '/Users/devin/workspace/fast-path-picker/src/lib.rs' '/Users/devin/workspace/fast-path-picker/src/main.rs' '/Users/devin/workspace/fast-path-picker/src/lib.rs'"
-diff '/Users/devin/workspace/fast-path-picker/src/main.rs' '/Users/devin/workspace/fast-path-picker/src/lib.rs' '/Users/devin/workspace/fast-path-picker/src/main.rs' '/Users/devin/workspace/fast-path-picker/src/lib.rs'
+echo "diff '{{PROJECT_ROOT}}/src/main.rs' '{{PROJECT_ROOT}}/src/lib.rs' '{{PROJECT_ROOT}}/src/main.rs' '{{PROJECT_ROOT}}/src/lib.rs'"
+diff '{{PROJECT_ROOT}}/src/main.rs' '{{PROJECT_ROOT}}/src/lib.rs' '{{PROJECT_ROOT}}/src/main.rs' '{{PROJECT_ROOT}}/src/lib.rs'
 exit $?;

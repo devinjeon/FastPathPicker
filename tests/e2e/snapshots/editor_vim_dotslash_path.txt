@@ -1,3 +1,2 @@
-
 vim  +10 ./src/main.rs
 exit $?;

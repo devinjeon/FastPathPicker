@@ -1,3 +1,2 @@
-
-/usr/local/bin/subl  '/Users/devin/workspace/fast-path-picker/src/main.rs:42' '/Users/devin/workspace/fast-path-picker/src/parse.rs:10'
+/usr/local/bin/subl  '{{PROJECT_ROOT}}/src/main.rs:42' '{{PROJECT_ROOT}}/src/parse.rs:10'
 exit $?;

@@ -1,10 +1,7 @@
-
-
 if type shopt > /dev/null; then
   shopt -s expand_aliases
 fi
-
 echo "executing command:"
-echo "echo '/Users/devin/configerator-dsi/data/config.yaml'"
-echo '/Users/devin/configerator-dsi/data/config.yaml'
+echo "echo '{{HOME}}/configerator-dsi/data/config.yaml'"
+echo '{{HOME}}/configerator-dsi/data/config.yaml'
 exit $?;

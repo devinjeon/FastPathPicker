@@ -1,3 +1,2 @@
-
-subl  '/Users/devin/www/js/hotness.js:42'
+subl  '{{HOME}}/www/js/hotness.js:42'
 exit $?;

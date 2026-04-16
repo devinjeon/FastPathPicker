@@ -1,10 +1,7 @@
-
-
 if type shopt > /dev/null; then
   shopt -s expand_aliases
 fi
-
 echo "executing command:"
-echo "echo '/Users/devin/workspace/fast-path-picker/tmp/.gitignore'"
-echo '/Users/devin/workspace/fast-path-picker/tmp/.gitignore'
+echo "echo '{{PROJECT_ROOT}}/tmp/.gitignore'"
+echo '{{PROJECT_ROOT}}/tmp/.gitignore'
 exit $?;

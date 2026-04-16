@@ -1,9 +1,6 @@
-
-
 if type shopt > /dev/null; then
   shopt -s expand_aliases
 fi
-
 echo "executing command:"
 echo "echo './hadoop-mapreduce-project/hadoop-mapreduce-client/hadoop-client/hadoop-mapreduce-project/hadoop-mapreduce-client/LongFileNamereallylongfileName.txt' './hadoop-mapreduce-project/hadoop-mapreduce-client/hadoop-client/hadoop-mapreduce-project/hadoop-mapreduce-client/some/deeper/dir/source.py'"
 echo './hadoop-mapreduce-project/hadoop-mapreduce-client/hadoop-client/hadoop-mapreduce-project/hadoop-mapreduce-client/LongFileNamereallylongfileName.txt' './hadoop-mapreduce-project/hadoop-mapreduce-client/hadoop-client/hadoop-mapreduce-project/hadoop-mapreduce-client/some/deeper/dir/source.py'

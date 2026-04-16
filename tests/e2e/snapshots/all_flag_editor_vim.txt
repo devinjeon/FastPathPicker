@@ -1,3 +1,2 @@
-
-vim  +10 /Users/devin/workspace/fast-path-picker/src/a.rs +"vsp +20 /Users/devin/workspace/fast-path-picker/src/b.rs" +"vsp +0 /Users/devin/workspace/fast-path-picker/src/c.rs"
+vim  +10 {{PROJECT_ROOT}}/src/a.rs +"vsp +20 {{PROJECT_ROOT}}/src/b.rs" +"vsp +0 {{PROJECT_ROOT}}/src/c.rs"
 exit $?;

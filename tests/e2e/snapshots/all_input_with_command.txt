@@ -1,9 +1,6 @@
-
-
 if type shopt > /dev/null; then
   shopt -s expand_aliases
 fi
-
 echo "executing command:"
 echo "git checkout 'feature-branch' 'hotfix/login-bug' 'develop'"
 git checkout 'feature-branch' 'hotfix/login-bug' 'develop'

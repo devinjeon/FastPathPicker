@@ -1,18 +1,8 @@
-
-
 if type shopt > /dev/null; then
   shopt -s expand_aliases
 fi
-
-printf "[0;31m
-Warning! Some invalid or unresolvable files were detected.
-[0m\n"
-printf "[0;31m
-It looks like one of these is a git abbreviated file with
-a triple dot path (.../). Try to turn off git's abbreviation
-with --numstat so we get actual paths (not abbreviated
-versions which cannot be resolved.
-[0m\n"
+printf "[0;31m\nWarning! Some invalid or unresolvable files were detected.\n[0m\n"
+printf "[0;31m\nIt looks like one of these is a git abbreviated file with\na triple dot path (.../). Try to turn off git's abbreviation\nwith --numstat so we get actual paths (not abbreviated\nversions which cannot be resolved.\n[0m\n"
 read -p "Are you sure you want to continue? Ctrl-C to quit" -r
 echo "executing command:"
 echo "echo '.../something/foo.py'"

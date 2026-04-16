@@ -5,6 +5,6 @@ if type shopt > /dev/null; then
 fi
 
 echo "executing command:"
-echo "echo $HOME '/Users/devin/workspace/fast-path-picker/src/main.rs'"
-echo $HOME '/Users/devin/workspace/fast-path-picker/src/main.rs'
+echo "echo $HOME '{{PROJECT_ROOT}}/src/main.rs'"
+echo $HOME '{{PROJECT_ROOT}}/src/main.rs'
 exit $?;

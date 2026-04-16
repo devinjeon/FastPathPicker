@@ -1,3 +1,2 @@
-
-nano  +10 '/Users/devin/workspace/fast-path-picker/src/a.rs' +20 '/Users/devin/workspace/fast-path-picker/src/b.rs'
+nano  +10 '{{PROJECT_ROOT}}/src/a.rs' +20 '{{PROJECT_ROOT}}/src/b.rs'
 exit $?;

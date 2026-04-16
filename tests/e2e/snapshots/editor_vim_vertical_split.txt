@@ -1,3 +1,2 @@
-
-vim -O  '/Users/devin/workspace/fast-path-picker/src/main.rs' '/Users/devin/workspace/fast-path-picker/src/parse.rs'
+vim -O  '{{PROJECT_ROOT}}/src/main.rs' '{{PROJECT_ROOT}}/src/parse.rs'
 exit $?;

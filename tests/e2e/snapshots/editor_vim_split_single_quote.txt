@@ -1,3 +1,2 @@
-
-vim  +42 ./s_a_file.txt +"vsp +10 /Users/devin/workspace/fast-path-picker/src/parse.rs"
+vim  +42 ./s_a_file.txt +"vsp +10 {{PROJECT_ROOT}}/src/parse.rs"
 exit $?;

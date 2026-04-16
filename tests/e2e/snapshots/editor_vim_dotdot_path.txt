@@ -1,3 +1,2 @@
-
 vim  +42 ../other/main.rs
 exit $?;

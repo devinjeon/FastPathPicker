@@ -1,10 +1,7 @@
-
-
 if type shopt > /dev/null; then
   shopt -s expand_aliases
 fi
-
 echo "executing command:"
-echo "echo '/Users/devin/workspace/fast-path-picker/nonexistent/deleted/file.rs'"
-echo '/Users/devin/workspace/fast-path-picker/nonexistent/deleted/file.rs'
+echo "echo '{{PROJECT_ROOT}}/nonexistent/deleted/file.rs'"
+echo '{{PROJECT_ROOT}}/nonexistent/deleted/file.rs'
 exit $?;

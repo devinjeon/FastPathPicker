@@ -1,20 +1,10 @@
-
-
 if type shopt > /dev/null; then
   shopt -s expand_aliases
 fi
-
-printf "[0;31m
-Warning! Some invalid or unresolvable files were detected.
-[0m\n"
-printf "[0;31m
-It looks like one of these is a git abbreviated file with
-a triple dot path (.../). Try to turn off git's abbreviation
-with --numstat so we get actual paths (not abbreviated
-versions which cannot be resolved.
-[0m\n"
+printf "[0;31m\nWarning! Some invalid or unresolvable files were detected.\n[0m\n"
+printf "[0;31m\nIt looks like one of these is a git abbreviated file with\na triple dot path (.../). Try to turn off git's abbreviation\nwith --numstat so we get actual paths (not abbreviated\nversions which cannot be resolved.\n[0m\n"
 read -p "Are you sure you want to continue? Ctrl-C to quit" -r
 echo "executing command:"
-echo "echo '/Users/devin/workspace/fast-path-picker/assets/launch_page.css' './fpp.rb' './index.html' '/Users/devin/workspace/fast-path-picker/scripts/makeDist.sh' '.../expected/selectCommandWithPassedCommand.txt' '/Users/devin/workspace/fast-path-picker/src/__tests__/expected/selectDownSelectInverse.txt' '.../expected/simpleSelectWithAttributes.txt' '/Users/devin/workspace/fast-path-picker/src/__tests__/expected/simpleWithAttributes.txt' '/Users/devin/workspace/fast-path-picker/src/__tests__/screenForTest.py' '/Users/devin/workspace/fast-path-picker/src/__tests__/screenTestRunner.py' '/Users/devin/workspace/fast-path-picker/src/__tests__/testScreen.py' '/Users/devin/workspace/fast-path-picker/src/format.py' '/Users/devin/workspace/fast-path-picker/src/formattedText.py' '/Users/devin/workspace/fast-path-picker/src/processInput.py' '/Users/devin/workspace/fast-path-picker/src/screenControl.py' '/Users/devin/workspace/fast-path-picker/src/screenFlags.py' '/Users/devin/workspace/fast-path-picker/src/stateFiles.py' '/Users/devin/workspace/fast-path-picker/src/version.py'"
-echo '/Users/devin/workspace/fast-path-picker/assets/launch_page.css' './fpp.rb' './index.html' '/Users/devin/workspace/fast-path-picker/scripts/makeDist.sh' '.../expected/selectCommandWithPassedCommand.txt' '/Users/devin/workspace/fast-path-picker/src/__tests__/expected/selectDownSelectInverse.txt' '.../expected/simpleSelectWithAttributes.txt' '/Users/devin/workspace/fast-path-picker/src/__tests__/expected/simpleWithAttributes.txt' '/Users/devin/workspace/fast-path-picker/src/__tests__/screenForTest.py' '/Users/devin/workspace/fast-path-picker/src/__tests__/screenTestRunner.py' '/Users/devin/workspace/fast-path-picker/src/__tests__/testScreen.py' '/Users/devin/workspace/fast-path-picker/src/format.py' '/Users/devin/workspace/fast-path-picker/src/formattedText.py' '/Users/devin/workspace/fast-path-picker/src/processInput.py' '/Users/devin/workspace/fast-path-picker/src/screenControl.py' '/Users/devin/workspace/fast-path-picker/src/screenFlags.py' '/Users/devin/workspace/fast-path-picker/src/stateFiles.py' '/Users/devin/workspace/fast-path-picker/src/version.py'
+echo "echo '{{PROJECT_ROOT}}/assets/launch_page.css' './fpp.rb' './index.html' '{{PROJECT_ROOT}}/scripts/makeDist.sh' '.../expected/selectCommandWithPassedCommand.txt' '{{PROJECT_ROOT}}/src/__tests__/expected/selectDownSelectInverse.txt' '.../expected/simpleSelectWithAttributes.txt' '{{PROJECT_ROOT}}/src/__tests__/expected/simpleWithAttributes.txt' '{{PROJECT_ROOT}}/src/__tests__/screenForTest.py' '{{PROJECT_ROOT}}/src/__tests__/screenTestRunner.py' '{{PROJECT_ROOT}}/src/__tests__/testScreen.py' '{{PROJECT_ROOT}}/src/format.py' '{{PROJECT_ROOT}}/src/formattedText.py' '{{PROJECT_ROOT}}/src/processInput.py' '{{PROJECT_ROOT}}/src/screenControl.py' '{{PROJECT_ROOT}}/src/screenFlags.py' '{{PROJECT_ROOT}}/src/stateFiles.py' '{{PROJECT_ROOT}}/src/version.py'"
+echo '{{PROJECT_ROOT}}/assets/launch_page.css' './fpp.rb' './index.html' '{{PROJECT_ROOT}}/scripts/makeDist.sh' '.../expected/selectCommandWithPassedCommand.txt' '{{PROJECT_ROOT}}/src/__tests__/expected/selectDownSelectInverse.txt' '.../expected/simpleSelectWithAttributes.txt' '{{PROJECT_ROOT}}/src/__tests__/expected/simpleWithAttributes.txt' '{{PROJECT_ROOT}}/src/__tests__/screenForTest.py' '{{PROJECT_ROOT}}/src/__tests__/screenTestRunner.py' '{{PROJECT_ROOT}}/src/__tests__/testScreen.py' '{{PROJECT_ROOT}}/src/format.py' '{{PROJECT_ROOT}}/src/formattedText.py' '{{PROJECT_ROOT}}/src/processInput.py' '{{PROJECT_ROOT}}/src/screenControl.py' '{{PROJECT_ROOT}}/src/screenFlags.py' '{{PROJECT_ROOT}}/src/stateFiles.py' '{{PROJECT_ROOT}}/src/version.py'
 exit $?;

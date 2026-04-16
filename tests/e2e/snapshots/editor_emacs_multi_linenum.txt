@@ -1,3 +1,2 @@
-
-emacs  +42 '/Users/devin/workspace/fast-path-picker/src/main.rs' +10 '/Users/devin/workspace/fast-path-picker/src/parse.rs' +5 '/Users/devin/workspace/fast-path-picker/src/lib.rs'
+emacs  +42 '{{PROJECT_ROOT}}/src/main.rs' +10 '{{PROJECT_ROOT}}/src/parse.rs' +5 '{{PROJECT_ROOT}}/src/lib.rs'
 exit $?;

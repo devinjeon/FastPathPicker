@@ -1,10 +1,7 @@
-
-
 if type shopt > /dev/null; then
   shopt -s expand_aliases
 fi
-
 echo "executing command:"
-echo "echo '/Users/devin/workspace/fast-path-picker/html/js/hotness.js' '/Users/devin/workspace/fast-path-picker/flib/asd/asd.py' '/Users/devin/workspace/fast-path-picker/Wilde/ads/story.m'"
-echo '/Users/devin/workspace/fast-path-picker/html/js/hotness.js' '/Users/devin/workspace/fast-path-picker/flib/asd/asd.py' '/Users/devin/workspace/fast-path-picker/Wilde/ads/story.m'
+echo "echo '{{PROJECT_ROOT}}/html/js/hotness.js' '{{PROJECT_ROOT}}/flib/asd/asd.py' '{{PROJECT_ROOT}}/Wilde/ads/story.m'"
+echo '{{PROJECT_ROOT}}/html/js/hotness.js' '{{PROJECT_ROOT}}/flib/asd/asd.py' '{{PROJECT_ROOT}}/Wilde/ads/story.m'
 exit $?;

@@ -1,10 +1,7 @@
-
-
 if type shopt > /dev/null; then
   shopt -s expand_aliases
 fi
-
 echo "executing command:"
-echo "echo './NSArray+Utils.h' '/Users/devin/workspace/fast-path-picker/src/categories/NSDate+Category.h' '/Users/devin/workspace/fast-path-picker/assets/retina/victory@2x.png'"
-echo './NSArray+Utils.h' '/Users/devin/workspace/fast-path-picker/src/categories/NSDate+Category.h' '/Users/devin/workspace/fast-path-picker/assets/retina/victory@2x.png'
+echo "echo './NSArray+Utils.h' '{{PROJECT_ROOT}}/src/categories/NSDate+Category.h' '{{PROJECT_ROOT}}/assets/retina/victory@2x.png'"
+echo './NSArray+Utils.h' '{{PROJECT_ROOT}}/src/categories/NSDate+Category.h' '{{PROJECT_ROOT}}/assets/retina/victory@2x.png'
 exit $?;

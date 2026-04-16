@@ -1,9 +1,6 @@
-
-
 if type shopt > /dev/null; then
   shopt -s expand_aliases
 fi
-
 echo "executing command:"
 echo "echo '/foo/bar/README.md' '/foo/bar/fpp' '/foo/bar/src/__tests__/__init__.py' '/foo/bar/src/__tests__/cursesForTest.py' '/foo/bar/src/__tests__/initTest.py' '/foo/bar/src/__tests__/screenForTest.py' '/foo/bar/src/charCodeMapping.py' '/foo/bar/src/choose.py' '/foo/bar/src/colorPrinter.py' '/foo/bar/src/cursesAPI.py' '/foo/bar/src/format.py' '/foo/bar/src/processInput.py' '/foo/bar/src/screenControl.py' '/foo/bar/src/screenFlags.py'"
 echo '/foo/bar/README.md' '/foo/bar/fpp' '/foo/bar/src/__tests__/__init__.py' '/foo/bar/src/__tests__/cursesForTest.py' '/foo/bar/src/__tests__/initTest.py' '/foo/bar/src/__tests__/screenForTest.py' '/foo/bar/src/charCodeMapping.py' '/foo/bar/src/choose.py' '/foo/bar/src/colorPrinter.py' '/foo/bar/src/cursesAPI.py' '/foo/bar/src/format.py' '/foo/bar/src/processInput.py' '/foo/bar/src/screenControl.py' '/foo/bar/src/screenFlags.py'

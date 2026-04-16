@@ -14,6 +14,7 @@
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+export PROJECT_ROOT
 INPUTS_DIR="$PROJECT_ROOT/PathPicker/src/tests/inputs"
 SNAPSHOT_DIR="$SCRIPT_DIR/snapshots"
 TMPDIR_BASE="$(mktemp -d)"
@@ -155,13 +156,22 @@ run_python_file() {
 # Normalize script output for comparison
 # Removes platform-specific differences while preserving semantic content
 normalize_output() {
-    # 1. Collapse printf multi-line strings into single lines using \n
+    # 1. Replace machine-specific paths with portable placeholders
+    # 2. Collapse printf multi-line strings into single lines using \n
     #    (Python embeds actual newlines, Rust uses \n escape — same behavior when executed)
-    # 2. Remove trailing whitespace
-    # 3. Remove empty lines
+    # 3. Remove trailing whitespace
+    # 4. Remove empty lines
     python3 -c "
-import sys
-lines = sys.stdin.read().split('\n')
+import os, sys
+text = sys.stdin.read()
+# Replace project root first (longer path), then home dir
+project_root = os.environ.get('PROJECT_ROOT', '')
+home_dir = os.path.expanduser('~')
+if project_root:
+    text = text.replace(project_root, '{{PROJECT_ROOT}}')
+if home_dir:
+    text = text.replace(home_dir, '{{HOME}}')
+lines = text.split('\n')
 result = []
 in_printf = False
 printf_buf = ''
@@ -247,7 +257,7 @@ run_test() {
             mkdir -p "$SNAPSHOT_DIR"
             local rs_out
             rs_out=$(run_rust "$input" "$rs_dir" "${flags[@]}")
-            echo "$rs_out" > "$SNAPSHOT_DIR/${test_name}.txt"
+            echo "$rs_out" | PROJECT_ROOT="$PROJECT_ROOT" normalize_output > "$SNAPSHOT_DIR/${test_name}.txt"
             echo -e "  ${CYAN}UPDATED${NC} $test_name"
             ;;
     esac
@@ -286,7 +296,7 @@ run_test_file() {
             mkdir -p "$SNAPSHOT_DIR"
             local rs_out
             rs_out=$(run_rust_file "$input_file" "$rs_dir" "${flags[@]}")
-            echo "$rs_out" > "$SNAPSHOT_DIR/${test_name}.txt"
+            echo "$rs_out" | PROJECT_ROOT="$PROJECT_ROOT" normalize_output > "$SNAPSHOT_DIR/${test_name}.txt"
             echo -e "  ${CYAN}UPDATED${NC} $test_name"
             ;;
     esac
@@ -349,7 +359,7 @@ run_test_editor() {
             rs_out=$(cat "$rs_dir/.fpp.sh" 2>/dev/null || echo "(no script)")
             unset FPP_DIR FPP_EDITOR
 
-            echo "$rs_out" > "$SNAPSHOT_DIR/${test_name}.txt"
+            echo "$rs_out" | PROJECT_ROOT="$PROJECT_ROOT" normalize_output > "$SNAPSHOT_DIR/${test_name}.txt"
             echo -e "  ${CYAN}UPDATED${NC} $test_name"
             ;;
     esac
@@ -432,7 +442,7 @@ run_test_env() {
             local rs_out
             rs_out=$(cat "$rs_dir/.fpp.sh" 2>/dev/null || echo "(no script generated)")
 
-            echo "$rs_out" > "$SNAPSHOT_DIR/${test_name}.txt"
+            echo "$rs_out" | PROJECT_ROOT="$PROJECT_ROOT" normalize_output > "$SNAPSHOT_DIR/${test_name}.txt"
             echo -e "  ${CYAN}UPDATED${NC} $test_name"
             ;;
     esac

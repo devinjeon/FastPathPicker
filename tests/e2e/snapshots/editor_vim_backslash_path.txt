@@ -1,3 +1,2 @@
-
-vim  +42 /Users/devin/workspace/fast-path-picker/backslash/file.txt
+vim  +42 {{PROJECT_ROOT}}/backslash/file.txt
 exit $?;
