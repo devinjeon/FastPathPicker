@@ -40,6 +40,6 @@ homebrew_casks:
         enabled: true
     commit_author:
       name: Hyojun Jeon
-      email: jeon@hyojun.me
+      email: devinjeon@users.noreply.github.com
     description: "Fast PathPicker — a high-performance Rust drop-in replacement for Facebook's PathPicker"
     homepage: https://github.com/devinjeon/FastPathPicker
