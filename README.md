@@ -94,7 +94,7 @@ git log --oneline | fpp2 -c 'git show $F'
 ### Homebrew (macOS / Linux)
 
 ```bash
-brew tap devinjeon/FastPathPicker
+brew tap devinjeon/FastPathPicker https://github.com/devinjeon/FastPathPicker
 brew install fpp2
 ```
 
